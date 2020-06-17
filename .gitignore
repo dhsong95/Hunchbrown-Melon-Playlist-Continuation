@@ -133,3 +133,4 @@ dmypy.json
 
 # Data Directory
 res/
+arena_data/
