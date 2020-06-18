@@ -134,3 +134,12 @@ dmypy.json
 # Data Directory
 res/
 arena_data/
+
+# VS Code Directory
+.vscode/
+
+# Static Directory(Fonts)
+static/
+
+# Model Checkpoints
+checkpoints/
