@@ -70,12 +70,14 @@ class ArenaSplitter:
 
         return q, a
 
-    def run(self, fname):
+    def run(self, fname, part):
         random.seed(777)
 
         print("Reading data...\n")
         playlists = load_json(fname)
         random.shuffle(playlists)
+        n = int(len(playlists) * float(part))
+        playlists = playlists[:n]
         print(f"Total playlists: {len(playlists)}")
 
         print("Splitting data...")
