@@ -1,91 +1,142 @@
 # -*- coding: utf-8 -*-
-import os
-import gc
-from tqdm import tqdm
+"""
+Author: DH Song
+Last Modified: 2020.06.25
+"""
 
+import os
 import pickle
 
-from processing.process_numpy import get_zero_array
-from processing.process_numpy import save_numpy
-
-from utils.similarity import calculate_cosine_similarity
-from utils.rating import mf_rating
-
+import numpy as np
 from implicit.als import AlternatingLeastSquares
 
-class MatrixFactorization:
-    def __init__(self, name):
-        self.name = name
+from processing.process_sparse_matrix import write_sparse_matrix
+from processing.process_sparse_matrix import load_sparse_matrix
+from processing.process_sparse_matrix import horizontal_stack
 
-        # number of data
-        self.n_train = 0
-        self.n_test = 0
+from similarity.cosine_similarity import calculate_cosine_similarity
 
-        # data
-        self.pt_train = None
-        self.ps_train = None
-        self.pt_test = None
-        self.ps_test = None
+from methods.method import Method
 
-        self.transformer_tag = None
-        self.transformer_song = None
+class MFMethod(Method):
+    """
+    Matrix Factorization based method
 
-        # item-by-item similarity
-        self.als_tag = None
-        self.als_song = None
+    Args: 
+    Return:
+    """    
+    def __init__(self, name, params):
+        super().__init__(name)
+
+        # Hyper parameter
+        self.params = params
+
+        # ALS Model
+        self.model_tag = None
+        self.model_song = None
+
+    def _rate(self, pid, mode):
+        '''
+            rate each playlist.
+            for the item in playlist.
+
+        Args:
+            pid(int): playlist id in test data
+            mode(str): determine which item. tags or songs
+        Return:
+            rating(numpy array): playlist and [tags or songs] rating 
+        '''        
+        assert mode in ['tags', 'songs']
+
+        n = self.n_tag if mode == 'tags' else self.n_song
+        test = self.pt_test if mode == 'tags' else self.ps_test
+        model = self.model_tag if mode == 'tags' else self.model_song
+        idf = self.transformer_tag.idf_ if mode == 'tags' else self.transformer_song.idf_
+
+        rating = np.zeros(n)
+        item_features = model.item_factors
+        playlist_feature = np.zeros(item_features.shape[1])
+
+        if test[pid, :].count_nonzero() != 0:
+            denominator = 0.0
+            for item in test[pid, :].nonzero()[1]:
+                playlist_feature += (idf[item] * item_features[item])
+                denominator += idf[item]
+            playlist_feature /= denominator
+        
+            rating = np.dot(playlist_feature, item_features.T)
+        return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        self.n_train = n_train
-        self.n_test = n_test
+        '''
+            initialize necessary variables
 
-        self.pt_train = pt_train
-        self.ps_train = ps_train
-        self.pt_test = pt_test
-        self.ps_test = ps_test
+        Args: 
+            n_train(int): number of train data
+            n_test(int): number of test data
+            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
+            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
+            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
+            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
+            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
+            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+        Return:
+        '''
+        super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
-        self.transformer_tag = transformer_tag
-        self.transformer_song = transformer_song
+        self.model_tag = AlternatingLeastSquares(factors=self.params['tag']['factors'], 
+                                                 regularization=self.params['tag']['regularization'],
+                                                 iterations=self.params['tag']['iterations'],
+                                                 calculate_training_loss=True)
+        self.model_song = AlternatingLeastSquares(factors=self.params['song']['factors'], 
+                                                  regularization=self.params['song']['regularization'],
+                                                  iterations=self.params['song']['iterations'],
+                                                  calculate_training_loss=True)
 
-    def train(self):
-        dir_name = './checkpoints/submission-val'
-        file_name = 'als_tag-factor100-iter10.pkl'
-        file_path = os.path.join(dir_name, file_name)
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
-                self.als_tag = pickle.load(f)
+
+    def train(self, checkpoint_dir='./checkpoints'):
+        '''
+            train MF Method.
+            ALS Model fitting
+            Save ALS Model
+
+        Args: 
+            checkpoint_dir(str): where to save model
+        Return:
+        '''
+        dirname = os.path.join(checkpoint_dir, self.name)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname, exist_ok=True)
+
+        filename = os.path.join(dirname, 'lmf-tag.pkl')
+        if os.path.exists(filename):
+            with open(filename, 'rb') as f:
+                self.model_tag = pickle.load(f)
         else:
-            self.als_tag = AlternatingLeastSquares(factors=100, regularization=0.08, iterations=10, calculate_training_loss=True)
-            self.als_tag.fit(self.pt_train.T)
-            
-            with open(file_path, 'wb') as f:
-                pickle.dump(self.als_tag, f)
+            self.model_tag.fit(self.pt_train.T)            
+            with open(filename, 'wb') as f:
+                pickle.dump(self.model_tag, f)
 
-        file_name = 'als_song-factor300-iter10.pkl'
-        file_path = os.path.join(dir_name, file_name)
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
-                self.als_song = pickle.load(f)
+        filename = os.path.join(dirname, 'lmf-song.pkl')
+        if os.path.exists(filename):
+            with open(filename, 'rb') as f:
+                self.model_song = pickle.load(f)
         else:
-            self.als_song = AlternatingLeastSquares(factors=300, regularization=0.08, iterations=30, calculate_training_loss=True)
-            self.als_song.fit(self.ps_train.T)
-            
-            with open(file_path, 'wb') as f:
-                pickle.dump(self.als_song, f)
-
+            self.model_song.fit(self.ps_train.T)
+            with open(filename, 'wb') as f:
+                pickle.dump(self.model_song, f)
 
     def predict(self, pid):
-        rt = mf_rating(      
-            pid,          
-            self.pt_test, 
-            self.als_tag, 
-            self.transformer_tag.idf_
-        )
+        '''
+            rating the playlist
 
-        rs = mf_rating(
-            pid, 
-            self.ps_test, 
-            self.als_song, 
-            self.transformer_song.idf_
-        )
+        Args: 
+            pid(int): playlist id
+        Return:
+            rating_tag(numpy array): playlist id and tag rating
+            rating_song(numpy array): playlist id and song rating
+        '''
+        rating_tag = self._rate(pid, mode='tags') 
+        rating_song = self._rate(pid, mode='songs')
 
-        return rt, rs
+        return rating_tag, rating_song

@@ -1,92 +1,115 @@
 # -*- coding: utf-8 -*-
+"""
+Author: DH Song
+Last Modified: 2020.06.25
+"""
+
 import os
-import gc
-from tqdm import tqdm
 
-from processing.process_numpy import get_zero_array
-from processing.process_numpy import save_numpy
+import numpy as np
 
-from utils.similarity import calculate_cosine_similarity
-from utils.rating import item_cf_rating
+from processing.process_sparse_matrix import write_sparse_matrix
+from processing.process_sparse_matrix import load_sparse_matrix
 
-import scipy.sparse as sp
-class ItemCF:
+from similarity.cosine_similarity import calculate_cosine_similarity
+
+from methods.method import Method
+
+class ItemCFMethod(Method):
+    """
+    Item based Collaborative Filtering Method
+
+    Args: 
+    Return:
+    """    
     def __init__(self, name):
-        self.name = name
+        super().__init__(name)
 
-        # number of data
-        self.n_train = 0
-        self.n_test = 0
-
-        # data
-        self.pt_train = None
-        self.ps_train = None
-        self.pt_test = None
-        self.ps_test = None
-
-        self.transformer_tag = None
-        self.transformer_song = None
-
-        # item-by-item similarity
+        # item-by-item similarity (t:tag, s:song)
         self.tt_similarity = None
         self.ss_similarity = None
 
+    def _rate(self, pid, mode):
+        '''
+            rate each playlist.
+            for the item in playlist. calculate idf-weighted similary items.
+
+        Args:
+            pid(int): playlist id in test data
+            mode(str): determine which item. tags or songs
+        Return:
+            rating(numpy array): playlist and [tags or songs] rating 
+        '''
+        assert mode in ['tags', 'songs']
+
+        n = self.n_tag if mode == 'tags' else self.n_song
+        test = self.pt_test if mode == 'tags' else self.ps_test
+        similarity = self.tt_similarity if mode == 'tags' else self.ss_similarity
+        idf = self.transformer_tag.idf_ if mode == 'tags' else self.transformer_song.idf_
+
+        rating = np.zeros(n)
+        for item in test[pid, :].nonzero()[1]:
+            rating += (similarity[item, :] * idf[item]).toarray().reshape(-1)
+
+        return rating
+
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        self.n_train = n_train
-        self.n_test = n_test
+        '''
+            initialize necessary variables
 
-        self.pt_train = pt_train
-        self.ps_train = ps_train
-        self.pt_test = pt_test
-        self.ps_test = ps_test
+        Args: 
+            n_train(int): number of train data
+            n_test(int): number of test data
+            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
+            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
+            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
+            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
+            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
+            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+        Return:
+        '''
+        super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
-        self.transformer_tag = transformer_tag
-        self.transformer_song = transformer_song
+    def train(self, checkpoint_dir='./checkpoints'):
+        '''
+            train the Item Cf Method.
+            Calculate the tag-tag similarity and song-song similarity.
+            Save the similarity matrix
 
-    def train(self):
-        ps_idf_train = self.transformer_song.transform(self.ps_train)
+        Args: 
+            checkpoint_dir(str): where to save similarity matrix
+        Return:
+        '''
+        dirname = os.path.join(checkpoint_dir, self.name)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname, exist_ok=True)
 
-        self.tt_similarity = calculate_cosine_similarity(self.pt_train.T)
-        self.ss_similarity = calculate_cosine_similarity(ps_idf_train.T)
-        # self.tt_similarity = sp.load_npz('./temp/tag-similarity.npz')
-        # self.ss_similarity = sp.load_npz('./temp/song-similarity.npz')
+        filename = os.path.join(dirname, 'tag-similarity.npz')
+        if os.path.exists(filename):
+            self.tt_similarity = load_sparse_matrix(filename)
+        else:
+            self.tt_similarity = calculate_cosine_similarity(self.pt_train.T)
+            write_sparse_matrix(self.tt_similarity, filename)
+
+        filename = os.path.join(dirname, 'song-similarity.npz')
+        if os.path.exists(filename):
+            self.ss_similarity = load_sparse_matrix(filename)
+        else:
+            ps_idf_train = self.transformer_song.transform(self.ps_train)
+            self.ss_similarity = calculate_cosine_similarity(ps_idf_train.T)
+            write_sparse_matrix(self.ss_similarity, filename)
 
     def predict(self, pid):
-        # tag_dir = './checkpoints/rating/{}/tag'.format(self.name)
-        # song_dir = './checkpoints/rating/{}/song'.format(self.name)
+        '''
+            rating the playlist
 
-        # if not os.path.exists(tag_dir):
-        #     os.makedirs(tag_dir, exist_ok=True)
-        # if not os.path.exists(song_dir):
-        #     os.makedirs(song_dir, exist_ok=True)
+        Args: 
+            pid(int): playlist id
+        Return:
+            rating_tag(numpy array): playlist id and tag rating
+            rating_song(numpy array): playlist id and song rating
+        '''
+        rating_tag = self._rate(pid, 'tags')
+        rating_song = self._rate(pid, 'songs')
 
-        # for pid in tqdm(range(self.n_test)):
-        #     if pid % 1000 == 0:
-        #         start = pid
-        #         end = pid + 999 if pid + 999 < self.n_test else self.n_test - 1
-        #         ratings_tag = get_zero_array(shape=(end - start + 1, self.pt_test.shape[1]))
-        #         ratings_song = get_zero_array(shape=(end - start + 1, self.ps_test.shape[1]))
-        
-        rt = item_cf_rating(      
-            pid,          
-            self.pt_test, 
-            self.tt_similarity, 
-            self.transformer_tag.idf_
-        )
-            # ratings_tag[pid % 1000] = rt
-
-        rs = item_cf_rating(
-            pid, 
-            self.ps_test, 
-            self.ss_similarity, 
-            self.transformer_song.idf_
-        )
-            # ratings_song[pid % 1000] = rs
-
-            # if pid % 1000 == 999 or pid == self.n_test - 1:
-            #     gc.collect()
-
-            #     save_numpy(os.path.join(tag_dir, '{}-{}'.format(start, end)), ratings_tag)
-            #     save_numpy(os.path.join(song_dir, '{}-{}'.format(start, end)), ratings_song)
-
-        return rt, rs
+        return rating_tag, rating_song

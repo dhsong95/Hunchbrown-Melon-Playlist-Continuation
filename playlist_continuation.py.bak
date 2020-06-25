@@ -1,72 +1,54 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
-"""
-
+import os
+import fire
 from tqdm import tqdm
 
 import numpy as np
-
-import fire
+from sklearn.preprocessing import MinMaxScaler
 
 from processing.process_json import load_json
 from processing.process_json import write_json
+
 from processing.process_dataframe import to_dataframe
 from processing.process_dataframe import get_item_idx_dictionary
+
 from processing.process_sparse_matrix import to_sparse_matrix
 from processing.process_sparse_matrix import transform_idf
 
+from processing.process_numpy import get_zero_array
+from processing.process_numpy import load_numpy
 
-from methods.idf_knn import IdfKNNMethod
-from methods.item_cf import ItemCFMethod
-from methods.mf import MFMethod
+from methods.item_cf import ItemCF
+from methods.idf_knn import IdfKnn
+from methods.mf import MatrixFactorization
+
 
 class PlaylistContinuation:
-    """
-    Playlist Continuation Class
-
-    Args: 
-    Return:
-    """    
     def __init__(self):
-        # number of data
+        # Number of data
         self.n_train = 0
         self.n_test = 0
 
-        # item to index dictionary
+        # Item to Id Dictionary
         self.tag2idx = dict()
         self.song2idx = dict()
         self.playlist2idx = dict()
 
-        # sparse matrix (p:playlist, t:tag, s:song)
         self.pt_train = None
-        self.pt_test = None
         self.ps_train = None
+        self.pt_test = None
         self.ps_test = None
 
-        # sparse matrix - idf transformed
-        self.pt_idf_train = None
-        self.ps_idf_train = None
-
-        # (tf)-idf transformer
         self.transformer_tag = None
         self.transformer_song = None
 
-        # method and weight
+        self.pt_idf_train = None
+        self.ps_idf_train = None
+
         self.methods = list()
-        self.weights = list()
 
+    
     def _prepare_data(self, train, test):
-        '''
-            make data for playlist continuation task.
-            preprae sparse matrix, item dictionary etc.
-
-        Args:
-            train(json): train data
-            test(json): test data
-        Return:
-        '''        
         df_train = to_dataframe(train)
         df_test = to_dataframe(test)
 
@@ -82,46 +64,27 @@ class PlaylistContinuation:
         self.pt_train = to_sparse_matrix(df_train, self.playlist2idx, self.tag2idx, 'tags')
         self.ps_train = to_sparse_matrix(df_train, self.playlist2idx, self.song2idx, 'songs')
 
+        print(self.pt_train.shape)
+        print(self.ps_train.shape)
+
         self.pt_test = to_sparse_matrix(df_test, self.playlist2idx, self.tag2idx, 'tags', correction=self.n_train)
         self.ps_test = to_sparse_matrix(df_test, self.playlist2idx, self.song2idx, 'songs', correction=self.n_train)
+
+        print(self.pt_test.shape)
+        print(self.ps_test.shape)
 
         print('IDF transformation...')
         self.transformer_tag, self.pt_idf_train = transform_idf(self.pt_train)
         self.transformer_song, self.ps_idf_train = transform_idf(self.ps_train)
 
-        print('\n*********Train Data*********')
-        print('Shape of Playlist-Tag Sparse Matrix: \t{}'.format(self.pt_train.shape))
-        print('Shape of Playlist-Song Sparse Matrix: \t{}'.format(self.ps_train.shape))
-        print('\n*********Test Data*********')
-        print('Shape of Playlist-Tag Sparse Matrix: \t{}'.format(self.pt_test.shape))
-        print('Shape of Playlist-Song Sparse Matrix: \t{}\n'.format(self.ps_test.shape))
-
     def _train_methods(self):
-        '''
-            for each method. train the method.
-            calculate similarity, model fitting etc.
-
-        Args:
-        Return:
-        '''        
         for method in self.methods:
             print('Method {} training...'.format(method.name))
             method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
             method.train()
 
     def _select_items(self, rating, top_item, already_item, idx2item, n):
-        '''
-            based on rating, recommend $n items.
-
-        Args:
-            rating(numpy array): array of rating on items(tags, songs).
-            top_item(numpy array): most frequently appeared item in train data
-            already_item(nuympy array): item in test data
-            idx2item(dict): dictionary to recover original item name
-            n(int): number of recommendation 
-        Return:
-        '''        
-        idx = np.zeros(shape=(n))
+        idx = get_zero_array(shape=(n, ))
         counter = 0
         for item_id in rating.argsort()[::-1]:
             if rating[item_id] == 0 or counter == n:
@@ -140,45 +103,48 @@ class PlaylistContinuation:
 
         return [idx2item[item_id] for item_id in idx]
 
-    def _generate_answers(self):
-        '''
-            make rating and recommendations.
 
-        Args:
-        Return:
-            answers(dict): recommendations
-        '''        
+    def _generate_answers(self):            
         idx2tag = {idx:tag for tag, idx in self.tag2idx.items()}
         idx2song = {idx:song for song, idx in self.song2idx.items()}
         idx2playlist = {idx-self.n_train:playlist for playlist, idx in self.playlist2idx.items() if idx >= self.n_train}
 
         answers = []
 
+        print("Generating answers...")
         for pid in tqdm(range(self.n_test)):
-            rating_tag = np.zeros(shape=(len(self.tag2idx)))
-            rating_song = np.zeros(shape=(len(self.song2idx)))
+            playlist = idx2playlist[pid]
+
+            rating_tag = get_zero_array(shape=(len(self.tag2idx), ))
+            rating_song = get_zero_array(shape=(len(self.song2idx), ))
 
             for method, weight in zip(self.methods, self.weights):
-                weight_tag = weight[0]
-                weight_song = weight[1]
-
                 rt, rs = method.predict(pid)
 
-                r_min = rt.min(-1)
-                r_max = rt.max(-1)
-                if r_max != 0:
+                r_min = rt.min()
+                r_max = rt.max()
+
+                if r_max != 0.0:
                     rt = (rt - r_min) / (r_max - r_min)
 
-                r_min = rs.min(-1)
-                r_max = rs.max(-1)
-                if r_max != 0:
+                r_min = rs.min()
+                r_max = rs.max()
+
+                if r_max != 0.0:
                     rs = (rs - r_min) / (r_max - r_min)
 
-                rating_tag += (rt * weight_tag)
-                rating_song += (rs * weight_song)
+                rating_tag += (rt * weight[0]).reshape(-1)
+                rating_song += (rs * weight[1]).reshape(-1)
 
 
-            playlist = idx2playlist[pid]
+            # if pid % 1000 == 0:
+            #     start = pid
+            #     end = pid + 999 if start + 999 < self.n_test else self.n_test - 1
+            #     ratings_tag = get_zero_array(shape=(end - start + 1, len(self.tag2idx)))
+            #     ratings_song = get_zero_array(shape=(end - start + 1, len(self.song2idx)))
+            #     for rt_dir, rs_dir, weight in zip(rt_dirs, rs_dirs, weights):
+            #         ratings_tag = load_numpy(os.path.join(rt_dir, '{}-{}.npy'.format(start, end)), weight[0])
+            #         ratings_song = load_numpy(os.path.join(rs_dir, '{}-{}.npy'.format(start, end)), weight[1])
 
             top_tag = self.transformer_tag.idf_.argsort()
             already_tag = self.pt_test[pid, :].nonzero()[1]
@@ -194,16 +160,9 @@ class PlaylistContinuation:
                 "tags": tags,
             })
 
-        return answers  
-    def run(self, train_fname, test_fname):
-        '''
-            running playlist continuation task.
+        return answers
 
-        Args:
-            train_fname(str): train filename.
-            test_fname(str): test filename.
-        Return:
-        '''        
+    def run(self, train_fname, test_fname):
         print("Loading train file...")
         train = load_json(train_fname)
 
@@ -214,37 +173,22 @@ class PlaylistContinuation:
         self._prepare_data(train, test)
 
         print('Training methods...')
-        mf_params = {
-            'tag': {
-                'factors': 100,
-                'regularization': 0.08,
-                'iterations': 10
-            },
-            'song': {
-                'factors': 300,
-                'regularization': 0.08,
-                'iterations': 30
-            }
+        # self.methods = [ItemCF('item-cf'), MatrixFactorization('matrix-factorization'), IdfKnn('idf-knn', k=250)]
+        self.methods = [IdfKnn('idf-knn', k=9)]
+        # (Tag Wieght, Song Wieght)
+        # self.weights = [(0.1, 0.1), (0.05, 0.2), (0.85, 0.7)]
+        self.weights = [(1, 1)]
 
-        }
-        self.methods = [
-            ItemCFMethod('item-collaborative-filtering'), 
-            # MFMethod('matrix-factorization', params=mf_params), 
-            IdfKNNMethod('idf-knn', k_ratio=0.005)
-        ]
-        # (Tag Weight, Song Weight) per method
-        self.weights = [
-            (0.55, 0.1), 
-            # (0.01, 0.0),
-            (0.45, 0.9), 
-        ]
+        # self.methods = [MatrixFactorization('matrix-factorization')]
+        # (Tag Wieght, Song Wieght)
+        # self.weights = [(1, 1)]
+
         self._train_methods()
-
-        print('Generating answers...')
         answers = self._generate_answers()
 
         print("Writing answers...")
         write_json(answers, "results/results.json")
+
 
 if __name__ == "__main__":
     fire.Fire(PlaylistContinuation)

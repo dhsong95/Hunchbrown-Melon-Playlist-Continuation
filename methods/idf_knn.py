@@ -1,119 +1,127 @@
 # -*- coding: utf-8 -*-
+"""
+Author: DH Song
+Last Modified: 2020.06.25
+"""
+
 import os
-import gc
-from tqdm import tqdm
 
 import numpy as np
 
+from processing.process_sparse_matrix import write_sparse_matrix
+from processing.process_sparse_matrix import load_sparse_matrix
 from processing.process_sparse_matrix import horizontal_stack
-from processing.process_numpy import get_zero_array
-from processing.process_numpy import save_numpy
-from utils.similarity import calculate_cosine_similarity
-from utils.rating import idf_knn_rating
 
+from similarity.cosine_similarity import calculate_cosine_similarity
 
-class IdfKnn:
-    def __init__(self, name, k=10, idf=True):
-        self.name = name
+from methods.method import Method
 
-        # parameter
-        self.k = k
+class IdfKNNMethod(Method):
+    """
+    KNN based on IDF Transformed sparse matrix
 
-        # number of data
-        self.n_train = 0
-        self.n_test = 0
+    Args: 
+    Return:
+    """    
+    def __init__(self, name, k_ratio=0.001):
+        super().__init__(name)
 
-        # data
-        self.pt_train = None
-        self.ps_train = None
-        self.pt_test = None
-        self.ps_test = None
+        # Hyper Parameter
+        self.k_ratio = k_ratio
+        self.k = 0
 
-        self.pt_train_idf = None
-        self.ps_train_idf = None
-        self.pt_test_idf = None
-        self.ps_test_idf = None
-
-        self.transformer_tag = None
-        self.transformer_song = None
-
-        # test-by-train similarity
-        self.similarity = None
-
+        # test-by-train similarity (p:playlist)
+        self.pp_similarity = None
         self.neighbors = None
 
-        self.ratings_tag = None
-        self.ratings_song = None
+    def _rate(self, pid, mode):
+        '''
+            rate each playlist.
+            for the item in playlist. calculate consider only the k nearest neighbors.
+
+        Args:
+            pid(int): playlist id in test data
+            mode(str): determine which item. tags or songs
+        Return:
+            rating(numpy array): playlist and [tags or songs] rating 
+        '''        
+        assert mode in ['tags', 'songs']
+
+        n = self.n_tag if mode == 'tags' else self.n_song
+        train = self.pt_train if mode == 'tags' else self.ps_train
+        test = self.pt_test if mode == 'tags' else self.ps_test
+        similarity = self.pp_similarity
+        idf = self.transformer_tag.idf_ if mode == 'tags' else self.transformer_song.idf_
+
+        rating = np.zeros(n)
+        for neighbor in self.pp_similarity[pid, :].toarray().argsort(axis=-1)[:, ::-1][0, :self.k]:
+            rating += (similarity[pid, neighbor] * train[neighbor, :]).toarray().reshape(-1)  
+        
+        return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        self.n_train = n_train
-        self.n_test = n_test
+        '''
+            initialize necessary variables
 
-        self.pt_train = pt_train
-        self.pt_train_idf = transformer_tag.transform(pt_train)
+        Args: 
+            n_train(int): number of train data
+            n_test(int): number of test data
+            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
+            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
+            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
+            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
+            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
+            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+        Return:
+        '''
+        super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
-        self.ps_train = ps_train
-        self.ps_train_idf = transformer_song.transform(ps_train)
+        k = int(self.k_ratio * self.n_train)
+        # make k to be multiply of 10
+        self.k = k + (10 - (k % 10))
+        print('KNN works with {} neighbor'.format(self.k))
 
-        self.pt_test = pt_test
-        self.pt_test_idf = transformer_tag.transform(pt_test)
+    def train(self, checkpoint_dir='./checkpoints'):
+        '''
+            train the IDF KNN Method.
+            find k nearest neighbors based on playlist to playlist similarity
+            Save the similarity matrix
 
-        self.ps_test = ps_test
-        self.ps_test_idf = transformer_song.transform(ps_test)
+        Args: 
+            checkpoint_dir(str): where to save similarity matrix
+        Return:
+        '''
+        pt_idf_train = self.transformer_tag.transform(self.pt_train)
+        ps_idf_train = self.transformer_song.transform(self.ps_train)
+        pt_idf_test = self.transformer_tag.transform(self.pt_test)
+        ps_idf_test = self.transformer_song.transform(self.ps_test)
 
-        self.transformer_tag = transformer_tag
-        self.transformer_song = transformer_song
-        
+        dirname = os.path.join(checkpoint_dir, self.name)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname, exist_ok=True)
 
-    def train(self):
-        
-        self.similarity = calculate_cosine_similarity(
-            horizontal_stack(self.pt_test_idf, self.ps_test_idf, [0.15, 0.85]),
-            horizontal_stack(self.pt_train_idf, self.ps_train_idf, [0.15, 0.85])
-        )
-        self.neighbors = self.similarity.toarray().argsort(axis=-1)[:, ::-1][:, :self.k]
+        filename = os.path.join(dirname, 'playlist-similarity.npz')
+        if os.path.exists(filename):
+            self.pp_similarity = load_sparse_matrix(filename)
+        else:
+            self.pp_similarity = calculate_cosine_similarity(
+                # Determine Playlist Similarity more emphasis on song feature 
+                horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
+                horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
+            )
+            write_sparse_matrix(self.pp_similarity, filename)
 
     def predict(self, pid):
-        # tag_dir = './checkpoints/rating/{}/tag'.format(self.name)
-        # song_dir = './checkpoints/rating/{}/song'.format(self.name)
+        '''
+            rating the playlist
 
-        # if not os.path.exists(tag_dir):
-        #     os.makedirs(tag_dir, exist_ok=True)
-        # if not os.path.exists(song_dir):
-        #     os.makedirs(song_dir, exist_ok=True)
+        Args: 
+            pid(int): playlist id
+        Return:
+            rating_tag(numpy array): playlist id and tag rating
+            rating_song(numpy array): playlist id and song rating
+        '''
+        rating_tag = self._rate(pid, mode='tags')
+        rating_song = self._rate(pid, mode='songs')
 
-        # assert self.pt_test.shape[0] == self.ps_test.shape[0]
-
-        # for pid in tqdm(range(self.n_test)):
-        #     if pid % 1000 == 0:
-        #         start = pid
-        #         end = pid + 999 if pid + 999 < self.n_test else self.n_test - 1
-        #         ratings_tag = get_zero_array(shape=(end - start + 1, self.pt_test.shape[1]))
-        #         ratings_song = get_zero_array(shape=(end - start + 1, self.ps_test.shape[1]))
-
-        rt = idf_knn_rating(     
-            pid,
-            self.pt_train,
-            self.pt_test,
-            self.neighbors, 
-            self.similarity
-        )
-            # ratings_tag[pid % 1000] = rt
-
-        rs = idf_knn_rating(
-            pid,
-            self.ps_train,
-            self.ps_test,
-            self.neighbors,
-            self.similarity
-        )
-            # ratings_song[pid % 1000] = rs
-
-        #     if pid % 1000 == 999 or pid == self.n_test - 1:
-        #         gc.collect()
-
-        #         save_numpy(os.path.join(tag_dir, '{}-{}'.format(start, end)), ratings_tag)
-        #         save_numpy(os.path.join(song_dir, '{}-{}'.format(start, end)), ratings_song)
-
-        # return tag_dir, song_dir
-        return rt, rs
+        return rating_tag, rating_song

@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
+"""
+Author: DH Song based on Kakao Provided
+Last Modified: 2020.06.25
+"""
+
 import fire
 import numpy as np
 
-from arena_util import load_json
+from processing.process_json import load_json
 
-
-class ArenaEvaluator:
+class CustomEvaluator:
     def _idcg(self, l):
         return sum((1.0 / np.log(i + 2) for i in range(l)))
 
@@ -19,6 +23,15 @@ class ArenaEvaluator:
                 dcg += 1.0 / np.log(i + 2)
 
         return dcg / self._idcgs[len(gt)]
+
+    def _rprec(self, gt, rec):
+        rprec = 0.0
+        n = len(gt)
+        for i, r in enumerate(rec[:n]):
+            if r in gt:
+                rprec += 1.0 
+
+        return rprec / n
 
     def _eval(self, gt_fname, rec_fname):
         gt_playlists = load_json(gt_fname)
@@ -52,26 +65,38 @@ class ArenaEvaluator:
         music_ndcg = 0.0
         tag_ndcg = 0.0
 
+        music_rprec = 0.0
+        tag_rprec = 0.0
+
         for rec in rec_playlists:
             gt = gt_dict[rec["id"]]
             music_ndcg += self._ndcg(gt["songs"], rec["songs"][:100])
             tag_ndcg += self._ndcg(gt["tags"], rec["tags"][:10])
 
+            music_rprec += self._rprec(gt["songs"], rec["songs"][:100])
+            tag_rprec += self._rprec(gt["tags"], rec["tags"][:10])
+
         music_ndcg = music_ndcg / len(rec_playlists)
         tag_ndcg = tag_ndcg / len(rec_playlists)
+
+        music_rprec = music_rprec / len(rec_playlists)
+        tag_rprec = tag_rprec / len(rec_playlists)
+
         score = music_ndcg * 0.85 + tag_ndcg * 0.15
 
-        return music_ndcg, tag_ndcg, score
+        return music_ndcg, tag_ndcg, music_rprec, tag_rprec, score
 
     def evaluate(self, gt_fname, rec_fname):
         try:
-            music_ndcg, tag_ndcg, score = self._eval(gt_fname, rec_fname)
+            music_ndcg, tag_ndcg, music_rprec, tag_rprec, score = self._eval(gt_fname, rec_fname)
             print(f"Music nDCG: {music_ndcg:.6}")
             print(f"Tag nDCG: {tag_ndcg:.6}")
+            print(f"Music rPREC: {music_rprec:.6}")
+            print(f"Tag rPREC: {tag_rprec:.6}")
             print(f"Score: {score:.6}")
         except Exception as e:
             print(e)
 
 
 if __name__ == "__main__":
-    fire.Fire(ArenaEvaluator)
+    fire.Fire(CustomEvaluator)

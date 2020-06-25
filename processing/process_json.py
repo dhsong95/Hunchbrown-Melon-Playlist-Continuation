@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""
+Author: Kakao Provided
+Last Modified: 2020.06.25
+"""
+
 import io
 import os
 import json
@@ -6,6 +11,14 @@ import distutils.dir_util
 
 
 def write_json(data, fname):
+    '''
+        save json file to local $fname
+
+    Args:
+        data (str): data to be saved
+        fname (str): local filename to be saved
+    Return:
+    '''
     def _conv(o):
         if isinstance(o, (np.int64, np.int32)):
             return int(o)
@@ -19,6 +32,14 @@ def write_json(data, fname):
 
 
 def load_json(fname):
+    '''
+        load json file from local $fname
+
+    Args:
+        fname (str): local json filename to be loaded
+    Return:
+        jsong_obj (json file): json file
+    '''
     with open(fname, encoding="utf-8") as f:
         json_obj = json.load(f)
 
@@ -26,4 +47,11 @@ def load_json(fname):
 
 
 def debug_json(r):
+    '''
+        check json before writing
+
+    Args:
+        r (str): local json filename to be checked
+    Return:
+    '''
     print(json.dumps(r, ensure_ascii=False, indent=4))
