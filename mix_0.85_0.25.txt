@@ -1,3 +1,0 @@
-Music nDCG: 0.148389
-Tag nDCG: 0.378447
-Score: 0.182898
