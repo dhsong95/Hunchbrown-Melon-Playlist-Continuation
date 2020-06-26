@@ -9,6 +9,8 @@ import os
 import json
 import distutils.dir_util
 
+import numpy as np
+
 
 def write_json(data, fname):
     '''

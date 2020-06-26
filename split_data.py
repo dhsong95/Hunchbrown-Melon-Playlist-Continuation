@@ -6,7 +6,7 @@ import fire
 import numpy as np
 
 from processing.process_json import load_json
-from processing.process_jso import write_json
+from processing.process_json import write_json
 
 
 class ArenaSplitter:

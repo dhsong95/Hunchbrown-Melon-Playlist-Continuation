@@ -230,13 +230,21 @@ class PlaylistContinuation:
         self.methods = [
             ItemCFMethod('item-collaborative-filtering'), 
             # MFMethod('matrix-factorization', params=mf_params), 
-            IdfKNNMethod('idf-knn', k_ratio=0.005)
+            # Trail 1 Failed
+            # IdfKNNMethod('idf-knn', k_ratio=0.005)
+            IdfKNNMethod('idf-knn', k_ratio=0.003)
         ]
         # (Tag Weight, Song Weight) per method
+        # Trail 1 Failed
+        # self.weights = [
+        #     (0.55, 0.1), 
+        #     # (0.01, 0.0),
+        #     (0.45, 0.9), 
+        # ]
         self.weights = [
-            (0.55, 0.1), 
+            (0.6, 0.3), # (0.7, 0.4), # (0.5, 0.3), # (0.6, 0.15)
             # (0.01, 0.0),
-            (0.45, 0.9), 
+            (0.4, 0.7) # (0.3, 0.6) # (0.5, 0.7), # (0.4, 0.85)
         ]
         self._train_methods()
 
