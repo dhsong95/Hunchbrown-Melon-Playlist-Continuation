@@ -20,7 +20,9 @@ from processing.process_sparse_matrix import transform_idf
 
 from methods.idf_knn import IdfKNNMethod
 from methods.item_cf import ItemCFMethod
-from methods.mf import MFMethod
+from methods.als_mf import ALSMFMethod
+from methods.nmf_mf import NMFMethod
+from methods.title_svd import TitleSVDMethod
 
 class PlaylistContinuation:
     """
@@ -38,6 +40,7 @@ class PlaylistContinuation:
         self.tag2idx = dict()
         self.song2idx = dict()
         self.playlist2idx = dict()
+        self.title2idx = dict()
 
         # sparse matrix (p:playlist, t:tag, s:song)
         self.pt_train = None
@@ -76,6 +79,7 @@ class PlaylistContinuation:
         self.tag2idx = get_item_idx_dictionary(df_train, df_test, 'tags')
         self.song2idx = get_item_idx_dictionary(df_train, df_test, 'songs')
         self.playlist2idx = get_item_idx_dictionary(df_train, df_test, 'id')
+        self.title2idx = get_item_idx_dictionary(df_train, df_test, 'plylst_title', indices=True)
 
         # pt: playlist-tag sparse matrix
         # ps: playlist-song sparse matrix
@@ -107,6 +111,8 @@ class PlaylistContinuation:
         for method in self.methods:
             print('Method {} training...'.format(method.name))
             method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
+            if isinstance(method, TitleSVDMethod):
+                method.title2idx = self.title2idx
             method.train()
 
     def _select_items(self, rating, top_item, already_item, idx2item, n):
@@ -214,22 +220,24 @@ class PlaylistContinuation:
         self._prepare_data(train, test)
 
         print('Training methods...')
-        mf_params = {
+        als_params = {
             'tag': {
-                'factors': 100,
-                'regularization': 0.08,
-                'iterations': 10
+                'factors': 256,
+                'regularization': 0.001,
+                'iterations': 500,
+                'confidence': 100
             },
             'song': {
-                'factors': 300,
-                'regularization': 0.08,
-                'iterations': 30
+                'factors': 512,
+                'regularization': 0.001,
+                'iterations': 1000,
+                'confidence': 100
             }
-
         }
+        '''
         self.methods = [
             ItemCFMethod('item-collaborative-filtering'), 
-            # MFMethod('matrix-factorization', params=mf_params), 
+            # MFMethod('als-matrix-factorization', params=mf_params), 
             # Trail 1 Failed
             # IdfKNNMethod('idf-knn', k_ratio=0.005)
             IdfKNNMethod('idf-knn', k_ratio=0.003)
@@ -245,6 +253,20 @@ class PlaylistContinuation:
             (0.6, 0.4), # (0.7, 0.4), # (0.5, 0.3), # (0.6, 0.15)
             # (0.01, 0.0),
             (0.4, 0.6) # (0.3, 0.6) # (0.5, 0.7), # (0.4, 0.85)
+        ]
+        '''
+
+        self.methods = [
+            # ItemCFMethod('item-collaborative-filtering'), 
+            # IdfKNNMethod('idf-knn', k_ratio=0.003),
+            # ALSMFMethod('als-matrix-factorization', params=als_params), 
+            TitleSVDMethod('title-svd')
+        ]
+        self.weights = [
+            # (0.6, 0.4),
+            # (0.4, 0.6),
+            # (0, 0.5),
+            (1, 1)
         ]
         self._train_methods()
 

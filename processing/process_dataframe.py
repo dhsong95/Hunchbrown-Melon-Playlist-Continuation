@@ -25,7 +25,7 @@ def _get_unique_items(dataframe, name, list_type=True):
         unique_items = sorted(unique_items)
     else:
         # assertion for playlist: guarantees that playlist has unique id in dataframe
-        assert len(dataframe[name].unique()) == len(dataframe[name])
+        # assert len(dataframe[name].unique()) == len(dataframe[name])
         # vertically stacked
         unique_items = dataframe[name]
     
@@ -57,7 +57,7 @@ def to_dataframe(data):
     return dataframe
 
 
-def get_item_idx_dictionary(train, test, mode):
+def get_item_idx_dictionary(train, test, mode, indices=False):
     '''
         give unique index(start from 0) for item.
 
@@ -65,10 +65,19 @@ def get_item_idx_dictionary(train, test, mode):
         train(pandas DataFrame): train dataframe
         test(pandas DataFrame): test dataframe
         mode(str): mode determines which item to be converted. tags, songs, id possible
+        indices(bool): value in list type
     Return:
         item2idx(dict): item-index dictionary 
     '''
-    assert mode in ['tags', 'songs', 'id']
+    assert mode in ['tags', 'songs', 'id', 'plylst_title']
     items = _get_unique_items(pd.concat([train, test], ignore_index=True), mode, mode in ['tags', 'songs'])
-    item2idx = {item:idx for idx, item in enumerate(items)}
+    
+    if indices:
+        item2idx = dict()
+        for idx, item in enumerate(items):
+            if item not in item2idx:    
+                item2idx[item] = list()   
+            item2idx[item].append(idx)
+    else:
+        item2idx = {item:idx for idx, item in enumerate(items)}
     return item2idx

@@ -13,12 +13,13 @@ from implicit.als import AlternatingLeastSquares
 from processing.process_sparse_matrix import write_sparse_matrix
 from processing.process_sparse_matrix import load_sparse_matrix
 from processing.process_sparse_matrix import horizontal_stack
+from processing.process_sparse_matrix import vertical_stack
 
 from similarity.cosine_similarity import calculate_cosine_similarity
 
 from methods.method import Method
 
-class MFMethod(Method):
+class ALSMFMethod(Method):
     """
     Matrix Factorization based method
 
@@ -48,23 +49,11 @@ class MFMethod(Method):
         '''        
         assert mode in ['tags', 'songs']
 
-        n = self.n_tag if mode == 'tags' else self.n_song
-        test = self.pt_test if mode == 'tags' else self.ps_test
         model = self.model_tag if mode == 'tags' else self.model_song
-        idf = self.transformer_tag.idf_ if mode == 'tags' else self.transformer_song.idf_
 
-        rating = np.zeros(n)
-        item_features = model.item_factors
-        playlist_feature = np.zeros(item_features.shape[1])
+        pid = self.n_train + pid
+        rating = np.dot(model.user_factors[pid, :], model.item_factors.T).reshape(-1)
 
-        if test[pid, :].count_nonzero() != 0:
-            denominator = 0.0
-            for item in test[pid, :].nonzero()[1]:
-                playlist_feature += (idf[item] * item_features[item])
-                denominator += idf[item]
-            playlist_feature /= denominator
-        
-            rating = np.dot(playlist_feature, item_features.T)
         return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
@@ -87,11 +76,13 @@ class MFMethod(Method):
         self.model_tag = AlternatingLeastSquares(factors=self.params['tag']['factors'], 
                                                  regularization=self.params['tag']['regularization'],
                                                  iterations=self.params['tag']['iterations'],
-                                                 calculate_training_loss=True)
+                                                 calculate_training_loss=True,
+                                                 use_gpu=True)
         self.model_song = AlternatingLeastSquares(factors=self.params['song']['factors'], 
                                                   regularization=self.params['song']['regularization'],
                                                   iterations=self.params['song']['iterations'],
-                                                  calculate_training_loss=True)
+                                                  calculate_training_loss=True,
+                                                  use_gpu=True)
 
 
     def train(self, checkpoint_dir='./checkpoints'):
@@ -108,21 +99,25 @@ class MFMethod(Method):
         if not os.path.exists(dirname):
             os.makedirs(dirname, exist_ok=True)
 
-        filename = os.path.join(dirname, 'lmf-tag.pkl')
+        filename = os.path.join(dirname, 'als-mf-tag.pkl')
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 self.model_tag = pickle.load(f)
         else:
-            self.model_tag.fit(self.pt_train.T)            
+            data = vertical_stack(self.pt_train, self.pt_test)
+            data = (data * self.params['tag']['confidence']).astype('double')
+            self.model_tag.fit(data.T)            
             with open(filename, 'wb') as f:
                 pickle.dump(self.model_tag, f)
 
-        filename = os.path.join(dirname, 'lmf-song.pkl')
+        filename = os.path.join(dirname, 'als-mf-song.pkl')
         if os.path.exists(filename):
             with open(filename, 'rb') as f:
                 self.model_song = pickle.load(f)
         else:
-            self.model_song.fit(self.ps_train.T)
+            data = vertical_stack(self.ps_train, self.ps_test)
+            data = (data * self.params['song']['confidence']).astype('double')
+            self.model_song.fit(data.T)
             with open(filename, 'wb') as f:
                 pickle.dump(self.model_song, f)
 
@@ -136,7 +131,7 @@ class MFMethod(Method):
             rating_tag(numpy array): playlist id and tag rating
             rating_song(numpy array): playlist id and song rating
         '''
-        rating_tag = self._rate(pid, mode='tags') 
+        rating_tag = np.zeros(self.n_tag)
         rating_song = self._rate(pid, mode='songs')
 
         return rating_tag, rating_song

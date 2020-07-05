@@ -78,6 +78,18 @@ def horizontal_stack(left, right, weights):
     weighted_stacked = sp.hstack([left * weights[0], right * weights[1]])
     return weighted_stacked
 
+def vertical_stack(up, down):
+    '''
+        vertically stacking
+
+    Args:
+        up(scipy csr matrix): user item sparse matrix (train)
+        down(scipy csr matrix): user item sparse matrix (test)
+    Return:
+        stacked(scipy csr matrix): Stacked user item sparse matrix 
+    '''
+    stacked = sp.vstack([up, down])
+    return stacked
 
 def write_sparse_matrix(data, fname):
     '''

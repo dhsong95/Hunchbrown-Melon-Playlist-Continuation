@@ -144,3 +144,6 @@ static/
 # Model Checkpoints
 checkpoints/
 submissions/
+
+# khaiii directory
+khaiii-master/
