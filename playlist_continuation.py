@@ -14,6 +14,7 @@ from processing.process_json import load_json
 from processing.process_json import write_json
 from processing.process_dataframe import to_dataframe
 from processing.process_dataframe import get_item_idx_dictionary
+from processing.process_dataframe import map_title_to_playlist
 from processing.process_sparse_matrix import to_sparse_matrix
 from processing.process_sparse_matrix import transform_idf
 
@@ -40,7 +41,7 @@ class PlaylistContinuation:
         self.tag2idx = dict()
         self.song2idx = dict()
         self.playlist2idx = dict()
-        self.title2idx = dict()
+        self.title2playlist = dict()
 
         # sparse matrix (p:playlist, t:tag, s:song)
         self.pt_train = None
@@ -79,7 +80,8 @@ class PlaylistContinuation:
         self.tag2idx = get_item_idx_dictionary(df_train, df_test, 'tags')
         self.song2idx = get_item_idx_dictionary(df_train, df_test, 'songs')
         self.playlist2idx = get_item_idx_dictionary(df_train, df_test, 'id')
-        self.title2idx = get_item_idx_dictionary(df_train, df_test, 'plylst_title', indices=True)
+
+        self.title2playlist = map_title_to_playlist(df_train, df_test)
 
         # pt: playlist-tag sparse matrix
         # ps: playlist-song sparse matrix
@@ -112,7 +114,8 @@ class PlaylistContinuation:
             print('Method {} training...'.format(method.name))
             method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
             if isinstance(method, TitleSVDMethod):
-                method.title2idx = self.title2idx
+                method.playlist2idx = self.playlist2idx
+                method.title2playlist = self.title2playlist
             method.train()
 
     def _select_items(self, rating, top_item, already_item, idx2item, n):
@@ -257,16 +260,16 @@ class PlaylistContinuation:
         '''
 
         self.methods = [
-            # ItemCFMethod('item-collaborative-filtering'), 
-            # IdfKNNMethod('idf-knn', k_ratio=0.003),
-            # ALSMFMethod('als-matrix-factorization', params=als_params), 
+            ItemCFMethod('item-collaborative-filtering'), 
+            IdfKNNMethod('idf-knn', k_ratio=0.003),
+            ALSMFMethod('als-matrix-factorization', params=als_params), 
             TitleSVDMethod('title-svd')
         ]
         self.weights = [
-            # (0.6, 0.4),
-            # (0.4, 0.6),
-            # (0, 0.5),
-            (1, 1)
+            (0.6, 0.4),
+            (0.4, 0.6),
+            (0, 0.5),
+            (0.3, 0.1)
         ]
         self._train_methods()
 

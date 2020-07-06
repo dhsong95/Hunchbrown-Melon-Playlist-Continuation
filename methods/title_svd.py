@@ -12,9 +12,11 @@ from collections import namedtuple
 import numpy as np
 from scipy.sparse import csr_matrix
 from gensim.models import doc2vec
+from gensim.models.doc2vec import TaggedDocument
 from sklearn.decomposition import TruncatedSVD
 
 from khaiii import KhaiiiApi
+from khaiii import KhaiiiExcept
 
 from processing.process_sparse_matrix import write_sparse_matrix
 from processing.process_sparse_matrix import load_sparse_matrix
@@ -35,11 +37,12 @@ class TitleSVDMethod(Method):
     def __init__(self, name):
         super().__init__(name)
 
-        self.title2idx = dict()
+        self.playlist2idx = dict()
+        self.title2playlist = dict()
         self.token2idx = dict()
-        self.tkn2ttl = dict()
+        self.token2title = dict()
 
-        self.doc_vectorizer = None
+        self.doc2vec_model = None
 
         self.tt_matrix = None
         self.ts_matrix = None
@@ -52,44 +55,54 @@ class TitleSVDMethod(Method):
         col = {'tag': list(), 'song': list()}
         data = {'tag': list(), 'song': list()}
         rid = 0
-        for title, indices in tqdm(self.title2idx.items()):
+        for title, playlist in tqdm(self.title2playlist.items()):
             tokens = list()
-            for word in api.analyze(title):
+            try:
+                words = api.analyze(title)
+            except KhaiiiExcept:
+                words = list()
+                tokens = ['/ZZ']
+
+            for word in words:
                 for morph in word.morphs:
                     tokens.append('/'.join([morph.lex, morph.tag]))
             tokens = ' '.join(tokens)
-            self.token2idx[tokens] = rid
-            self.tkn2ttl[rid] = indices
-            for idx in indices:
-                if idx >= self.n_train:
-                    continue
+            if tokens in self.token2idx:
+                rid = self.token2idx[tokens]
+            else:
+                self.token2title[tokens] = list()
+                self.token2idx[tokens] = rid
 
-                for cid in self.pt_train[idx].nonzero()[1]:
-                    row['tag'].append(rid)
-                    col['tag'].append(cid)
-                    data['tag'].append(1)
+            self.token2title[tokens].append(title)
 
-                for cid in self.ps_train[idx].nonzero()[1]:
-                    row['song'].append(rid)
-                    col['song'].append(cid)
-                    data['song'].append(1)
-            
-            rid += 1
+            for p in playlist:
+                idx = self.playlist2idx[p]
+                if idx < self.n_train:
+                    for cid in self.pt_train[idx].nonzero()[1]:
+                        row['tag'].append(rid)
+                        col['tag'].append(cid)
+                        data['tag'].append(1)
+
+                    for cid in self.ps_train[idx].nonzero()[1]:
+                        row['song'].append(rid)
+                        col['song'].append(cid)
+                        data['song'].append(1)
+            rid = len(self.token2idx)
 
         self.tt_matrix = csr_matrix((data['tag'], (row['tag'], col['tag'])), shape=(len(self.token2idx), self.n_tag))
         self.ts_matrix = csr_matrix((data['song'], (row['song'], col['song'])), shape=(len(self.token2idx), self.n_song))
 
-        for a in range(100, 110):
-            print(self.tt_matrix[a].nonzero())
-            print(self.tkn2ttl[a])
-            for b in self.tkn2ttl[a]:
-                if b < self.pt_train.shape[0]:
-                    print(self.pt_train[b].nonzero())
-                else:
-                    print(self.pt_test[b - self.n_train].nonzero())
+        # for a in range(1000, 1010):
+        #     print(self.ts_matrix[a].nonzero())
+        #     idx2token = {idx:token for token, idx in self.token2idx.items()}
+        #     token = idx2token[a]
+        #     for title in self.token2title[token]:
+        #         for playlist in self.title2playlist[title]:
+        #             idx = self.playlist2idx[playlist]
+        #             if idx < self.ps_train.shape[0]:
+        #                 print(self.ps_train[idx].nonzero())
 
-            idx2token = {idx:token for token, idx in self.token2idx.items()}
-            print(idx2token[a])
+        #     print(idx2token[a])
 
     def _rate(self, pid, mode):
         '''
@@ -103,20 +116,37 @@ class TitleSVDMethod(Method):
             rating(numpy array): playlist and [tags or songs] rating 
         '''        
         assert mode in ['tags', 'songs']
-        test = self.pt_test if mode == 'tags' else self.ps_test
+        title_matrix = self.tt_matrix if mode == 'tags' else self.ts_matrix
+        n = self.n_tag if mode == 'tags' else self.n_song
 
-        idx2title = {idx:title for title, idx in self.title2idx.items()}
-        title = idx2title[pid + self.n_train]
+        idx2playlist = {idx:playlist for playlist, idx in self.playlist2idx.items()}
+        playlist2title = dict()
+        for title, playlists in self.title2playlist.items():
+            for playlist in playlists:
+                playlist2title[playlist] = title
+
+        rating = np.zeros(n)
+
+        playlist = idx2playlist[pid]
+        title = playlist2title[playlist]
 
         api = KhaiiiApi()
+        token = list()
+        for word in api.analyze(title):
+            for morph in word.morphs:
+                token.append('/'.join([morph.lex, morph.tag]))
 
-        token = api.analyze(title)
-        doc_vec = self.doc_vectorizer.infer_vector(token)
-        
-        for t, similarity in self.doc_vectorizer.docvecs.most_similar([doc_vec]):
-            pass
+        doc_vec = self.doc2vec_model.infer_vector(token)
+        counter = 0
+        for tag, similarity in self.doc2vec_model.docvecs.most_similar([doc_vec], topn=len(self.token2idx)):
+            if counter >= 100 or similarity < 0.5:
+                break
 
-        return None
+            if title_matrix[tag].count_nonzero() > 0:
+                rating += (title_matrix[tag].toarray() * similarity).reshape(-1)
+                counter += 1
+
+        return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
         '''
@@ -155,21 +185,24 @@ class TitleSVDMethod(Method):
 
         filename = os.path.join(dirname, 'doc2vec.model')
         if os.path.exists(filename):
-            self.doc_vectorizer = doc2vec.Doc2Vec.load(filename)
+            self.doc2vec_model = doc2vec.Doc2Vec.load(filename)
         else:
-            TaggedDocument = namedtuple('TaggedDocument', 'words tag')
-            tagged_doc = [TaggedDocument(token, [idx]) for token, idx in self.token2idx.items()]
+            tagged_doc = [TaggedDocument(token.split(), [idx]) for token, idx in self.token2idx.items()]
 
-            self.doc_vectorizer = doc2vec.Doc2Vec(size=500, alpha=0.025, min_alpha=0.025, seed=2020)
-            self.doc_vectorizer.build_vocab(tagged_doc)
+            self.doc2vec_model = doc2vec.Doc2Vec(vector_size=500, alpha=0.05, min_alpha=0.05, seed=2020)
+            self.doc2vec_model.build_vocab(tagged_doc)
 
-            for _ in tqdm(range(10)):
-                self.doc_vectorizer.train(tagged_doc)
-                self.doc_vectorizer.alpha -= 0.002
-                self.doc_vectorizer.min_alpha = self.doc_vectorizer.alpha
+            for _ in tqdm(range(50)):
+                self.doc2vec_model.train(
+                    tagged_doc, 
+                    total_examples=self.doc2vec_model.corpus_count, 
+                    epochs=self.doc2vec_model.epochs
+                )
+                self.doc2vec_model.alpha -= 0.002
+                self.doc2vec_model.min_alpha = self.doc2vec_model.alpha
 
-            self.doc_vectorizer.save('doc2vec.model')
-
+            self.doc2vec_model.save(filename)
+        
     def predict(self, pid):
         '''
             rating the playlist
@@ -180,8 +213,7 @@ class TitleSVDMethod(Method):
             rating_tag(numpy array): playlist id and tag rating
             rating_song(numpy array): playlist id and song rating
         '''
-        # rating_tag = self._rate(pid, mode='tags') 
-        # rating_song = self._rate(pid, mode='songs')
+        rating_tag = self._rate(pid, mode='tags') 
+        rating_song = self._rate(pid, mode='songs')
 
-        # return rating_tag, rating_song
-        return None
+        return rating_tag, rating_song

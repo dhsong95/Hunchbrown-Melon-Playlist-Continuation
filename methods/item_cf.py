@@ -95,6 +95,7 @@ class ItemCFMethod(Method):
         if os.path.exists(filename):
             self.ss_similarity = load_sparse_matrix(filename)
         else:
+            # @TODO: remove idf
             ps_idf_train = self.transformer_song.transform(self.ps_train)
             self.ss_similarity = calculate_cosine_similarity(ps_idf_train.T)
             write_sparse_matrix(self.ss_similarity, filename)
