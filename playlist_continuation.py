@@ -16,6 +16,7 @@ from processing.process_dataframe import to_dataframe
 from processing.process_dataframe import get_item_idx_dictionary
 from processing.process_dataframe import map_title_to_playlist
 from processing.process_sparse_matrix import to_sparse_matrix
+from processing.process_sparse_matrix import tag_by_song_sparse_matrix
 from processing.process_sparse_matrix import transform_idf
 
 
@@ -23,7 +24,8 @@ from methods.idf_knn import IdfKNNMethod
 from methods.item_cf import ItemCFMethod
 from methods.als_mf import ALSMFMethod
 from methods.nmf_mf import NMFMethod
-from methods.title_svd import TitleSVDMethod
+from methods.title_knn import TitleKNNMethod
+from methods.song_tag import SongTagCrossMethod
 
 class PlaylistContinuation:
     """
@@ -60,6 +62,8 @@ class PlaylistContinuation:
         # method and weight
         self.methods = list()
         self.weights = list()
+        self.title_knn_method = TitleKNNMethod(name='title-knn')
+        self.song_tag_cross_method = SongTagCrossMethod(name='song-tag-cross-method')
 
     def _prepare_data(self, train, test):
         '''
@@ -91,6 +95,8 @@ class PlaylistContinuation:
         self.pt_test = to_sparse_matrix(df_test, self.playlist2idx, self.tag2idx, 'tags', correction=self.n_train)
         self.ps_test = to_sparse_matrix(df_test, self.playlist2idx, self.song2idx, 'songs', correction=self.n_train)
 
+        self.ts = tag_by_song_sparse_matrix(df_train, self.tag2idx, self.song2idx)
+
         print('IDF transformation...')
         self.transformer_tag, self.pt_idf_train = transform_idf(self.pt_train)
         self.transformer_song, self.ps_idf_train = transform_idf(self.ps_train)
@@ -111,12 +117,19 @@ class PlaylistContinuation:
         Return:
         '''        
         for method in self.methods:
-            print('Method {} training...'.format(method.name))
+            print('Method {} training...'.format(method.name))        
             method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
-            if isinstance(method, TitleSVDMethod):
-                method.playlist2idx = self.playlist2idx
-                method.title2playlist = self.title2playlist
             method.train()
+
+        self.title_knn_method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
+        self.title_knn_method.playlist2idx = self.playlist2idx
+        self.title_knn_method.title2playlist = self.title2playlist
+        self.title_knn_method.train()
+
+        # self.song_tag_cross_method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
+        # self.song_tag_cross_method.ts_matrix = self.ts
+        # self.song_tag_cross_method.train()
+
 
     def _select_items(self, rating, top_item, already_item, idx2item, n):
         '''
@@ -186,6 +199,29 @@ class PlaylistContinuation:
                 rating_tag += (rt * weight_tag)
                 rating_song += (rs * weight_song)
 
+            if len(self.pt_test[pid, :].nonzero()[1]) == 0:
+                rt = self.title_knn_method.predict(pid, 'tags')
+                r_min = rt.min(-1)
+                r_max = rt.max(-1)
+                if r_max != 0:
+                    rt = (rt - r_min) / (r_max - r_min)
+
+                if len(rating_tag.nonzero()[0]) == 0:
+                    rating_tag += (rt * 0.8)
+                else:
+                    rating_tag += (rt * 0.2)
+
+            if len(self.ps_test[pid, :].nonzero()[1]) == 0:
+                rs = self.title_knn_method.predict(pid, 'songs')
+                r_min = rs.min(-1)
+                r_max = rs.max(-1)
+                if r_max != 0:
+                    rs = (rs - r_min) / (r_max - r_min)
+
+                if len(rating_song.nonzero()[0]) == 0:
+                    rating_song += (rs * 0.8)
+                else:
+                    rating_song += (rs * 0.2)
 
             playlist = idx2playlist[pid]
 
@@ -261,15 +297,13 @@ class PlaylistContinuation:
 
         self.methods = [
             ItemCFMethod('item-collaborative-filtering'), 
-            IdfKNNMethod('idf-knn', k_ratio=0.003),
-            ALSMFMethod('als-matrix-factorization', params=als_params), 
-            TitleSVDMethod('title-svd')
+            IdfKNNMethod('idf-knn', k_ratio=0.001), # 0.003 -> 0.001
+            ALSMFMethod('als-matrix-factorization', params=als_params)
         ]
         self.weights = [
             (0.6, 0.4),
             (0.4, 0.6),
             (0, 0.5),
-            (0.3, 0.1)
         ]
         self._train_methods()
 

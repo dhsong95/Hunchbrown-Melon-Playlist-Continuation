@@ -7,7 +7,7 @@ Last Modified: 2020.06.25
 import numpy as np
 import scipy.sparse as sp
 from sklearn.feature_extraction.text import TfidfTransformer
-
+from tqdm import tqdm
 
 def to_sparse_matrix(dataframe, playlist2idx, item2idx, mode, correction=0):
     '''
@@ -43,6 +43,43 @@ def to_sparse_matrix(dataframe, playlist2idx, item2idx, mode, correction=0):
     data = np.ones(len(rows))
 
     sparse_matrix = sp.csr_matrix((data, (rows, cols)), shape=(len(dataframe), len(item2idx)))
+        
+    return sparse_matrix
+
+def tag_by_song_sparse_matrix(dataframe, tag2idx, song2idx):
+    '''
+        change dataframe to user item sparse matrix
+
+    Args:
+        dataframe(pandas DataFrame): dataframe to be converted
+        playlist2idx(dict): playlist-playlist index dictionary
+        item2idx(dict): tag-tag index or song-song index dictionary
+        mode(str): tags or songs to be item part
+        correction(int): train and test is vertically stacked in playlist2idx. 
+                         For test playlsit to allocate right index. need adjustment
+    Return:
+        sparse_matrix(scipy csr matrix): user item sparse matrix 
+    '''
+    rows = list()
+    cols = list()
+    data = list()
+
+    for idx in tqdm(range(len(dataframe))):
+        for tag in dataframe.loc[idx, 'tags']:
+            tid = tag2idx[tag]
+
+            for song in dataframe.loc[idx, 'songs']:
+                sid = song2idx[song]
+                
+                rows.append(tid)
+                cols.append(sid)
+        
+    assert len(rows) == len(cols)
+    rows = np.array(rows)
+    cols = np.array(cols)
+    data = np.ones(len(rows))
+
+    sparse_matrix = sp.csr_matrix((data, (rows, cols)), shape=(len(tag2idx), len(song2idx)))
         
     return sparse_matrix
 
