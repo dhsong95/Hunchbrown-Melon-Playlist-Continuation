@@ -8,6 +8,7 @@ import os
 import pickle
 
 import numpy as np
+import implicit
 from implicit.als import AlternatingLeastSquares
 
 from processing.process_sparse_matrix import write_sparse_matrix
@@ -77,12 +78,12 @@ class ALSMFMethod(Method):
                                                  regularization=self.params['tag']['regularization'],
                                                  iterations=self.params['tag']['iterations'],
                                                  calculate_training_loss=True,
-                                                 use_gpu=True)
+                                                 use_gpu=implicit.cuda.HAS_CUDA)
         self.model_song = AlternatingLeastSquares(factors=self.params['song']['factors'], 
                                                   regularization=self.params['song']['regularization'],
                                                   iterations=self.params['song']['iterations'],
                                                   calculate_training_loss=True,
-                                                  use_gpu=True)
+                                                  use_gpu=implicit.cuda.HAS_CUDA)
 
 
     def train(self, checkpoint_dir='./checkpoints'):
