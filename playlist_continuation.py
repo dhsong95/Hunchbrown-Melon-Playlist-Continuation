@@ -1,39 +1,57 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
-"""
+""" Main playlist continaution system model. 
 
-from tqdm import tqdm
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.14
 
-import numpy as np
+Recommend songs and tags based on seed songs/tags in train and test dataset.
+"""
 
 import fire
+import numpy as np
+from tqdm import tqdm
 
-from processing.process_json import load_json
-from processing.process_json import write_json
 from processing.process_dataframe import to_dataframe
 from processing.process_dataframe import get_item_idx_dictionary
 from processing.process_dataframe import map_title_to_playlist
+from processing.process_json import load_json
+from processing.process_json import write_json
 from processing.process_sparse_matrix import to_sparse_matrix
 from processing.process_sparse_matrix import tag_by_song_sparse_matrix
 from processing.process_sparse_matrix import transform_idf
 
-
+from methods.als_mf import ALSMFMethod
 from methods.idf_knn import IdfKNNMethod
 from methods.item_cf import ItemCFMethod
-from methods.als_mf import ALSMFMethod
 from methods.nmf_mf import NMFMethod
 from methods.title_knn import TitleKNNMethod
-from methods.song_tag import SongTagCrossMethod
+# from methods.song_tag import SongTagCrossMethod
 
 class PlaylistContinuation:
-    """
-    Playlist Continuation Class
+    """ Playlist continuastion model.
 
-    Args: 
-    Return:
+    Recommend songs/tags based on seeds songs/tags in train and test datasets.
+
+    Atrtibutes:
+        n_train (int)   : number of playlist in train dataset.
+        n_test (int)    : number of playlist in test dataset. 
+        tag2idx (dict)  : tag to index(starts from 0) dictionary.
+        song2idx (dict) : song to index(starts from 0) dictionary.
+        playlist2idx (dict) : playlist to index(starts from 0) dictionary.
+        title2playlist (dict)   : title to list of playlists dictionary
+        pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+        pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+        ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+        ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+        pt_idf_train (csr_matirx)   : TF-IDF transformed pt_train.
+        ps_idf_train (csr_matirx)   : TF-IDF transformed ps_train.
+        transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+        transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
+        methods (list)  : list of Method classes for playlist continuation.
+        weights (list)  : list of (tag weight, song weight) to be multiplied to each Method in methods.
+        title_knn_method (TitleKNNMethod)   : additional method for cold start problem, using title information.
     """    
+
     def __init__(self):
         # number of data
         self.n_train = 0
@@ -63,7 +81,7 @@ class PlaylistContinuation:
         self.methods = list()
         self.weights = list()
         self.title_knn_method = TitleKNNMethod(name='title-knn')
-        self.song_tag_cross_method = SongTagCrossMethod(name='song-tag-cross-method')
+        # self.song_tag_cross_method = SongTagCrossMethod(name='song-tag-cross-method')
 
     def _prepare_data(self, train, test):
         '''
@@ -241,14 +259,16 @@ class PlaylistContinuation:
 
         return answers  
     def run(self, train_fname, test_fname):
-        '''
-            running playlist continuation task.
+        """ Maing method to be fired.
+
+            Entry point for playlist continuation tast.
 
         Args:
-            train_fname(str): train filename.
-            test_fname(str): test filename.
+            train_fname (str)   : train filename.
+            test_fname  (str)   : test filename.
         Return:
-        '''        
+        """
+        
         print("Loading train file...")
         train = load_json(train_fname)
 
