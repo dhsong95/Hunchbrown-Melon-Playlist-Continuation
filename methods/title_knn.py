@@ -62,14 +62,14 @@ class TitleKNNMethod(Method):
                 words = api.analyze(title)
             except KhaiiiExcept:
                 words = list()
-                tokens = list()
-                # tokens = ['/ZZ']
+                # tokens = list()
+                tokens = ['/ZZ']
 
             for word in words:
                 for morph in word.morphs:
-                    # tokens.append('/'.join([morph.lex, morph.tag]))
-                    if morph.tag[0] not in ['J', 'S', 'Z']:
-                        tokens.append('/'.join([morph.lex, morph.tag]))
+                    tokens.append('/'.join([morph.lex, morph.tag]))
+                    # if morph.tag[0] not in ['J', 'S', 'Z']:
+                    #     tokens.append('/'.join([morph.lex, morph.tag]))
 
             if len(tokens) > 0:
                 tokens = ' '.join(tokens)
@@ -148,12 +148,13 @@ class TitleKNNMethod(Method):
             words = api.analyze(title)
         except KhaiiiExcept:
             words = list()
+            tokens = ['/ZZ']
 
         for word in words:
             for morph in word.morphs:
-                # token.append('/'.join([morph.lex, morph.tag]))
-                if morph.tag[0] not in ['J', 'S', 'Z']:
-                    token.append('/'.join([morph.lex, morph.tag]))
+                token.append('/'.join([morph.lex, morph.tag]))
+                # if morph.tag[0] not in ['J', 'S', 'Z']:
+                #     token.append('/'.join([morph.lex, morph.tag]))
 
         if len(token) == 0:
             return rating

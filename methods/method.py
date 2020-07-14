@@ -1,15 +1,29 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
+""" Base Method class.
+
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.14
+
+Base Method class for Playlist continuation task.
 """
 
 class Method:
-    """
-    Super class for methods
+    """ Base Method class.
 
-    Args: 
-        name(str): name of method
+    Base Method class for Playlist continuation task.
+
+    Attributes: 
+        name (str)  : name of method
+        n_train (int)   : number of playlist in train dataset.
+        n_test (int)    : number of playlist in test dataset. 
+        n_tag (int)   : number of tag in train and test dataset.
+        n_song (int)    : number of song in train and test dataset. 
+        pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+        pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+        ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+        ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+        transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+        transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
     Return:
     """    
     def __init__(self, name):
@@ -35,18 +49,19 @@ class Method:
         self.transformer_song = None
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        """
-        initialize necessary variables for method
+        """ initialize necessary variables for Method.
+
+        initialize necessary data structure.
 
         Args: 
-            n_train(int): number of train data
-            n_test(int): number of test data
-            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
-            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
-            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
-            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
-            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
-            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+            n_train (int)   : number of playlist in train dataset.
+            n_test (int)    : number of playlist in test dataset. 
+            pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+            ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+            transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+            transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
         Return:
         """    
 
