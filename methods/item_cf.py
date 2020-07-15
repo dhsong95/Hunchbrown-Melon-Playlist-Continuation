@@ -1,27 +1,35 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
+""" Idf Knn Method class.
+
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.14
+
+Item CF Method class for Playlist continuation task.
 """
 
 import os
 
 import numpy as np
 
-from processing.process_sparse_matrix import write_sparse_matrix
+from methods.method import Method
+
 from processing.process_sparse_matrix import load_sparse_matrix
+from processing.process_sparse_matrix import write_sparse_matrix
 
 from similarity.cosine_similarity import calculate_cosine_similarity
 
-from methods.method import Method
-
 class ItemCFMethod(Method):
-    """
-    Item based Collaborative Filtering Method
+    """ Item Collaborative Filterint Method class for playlist continuation task.
+    
+    Item Collaborative Filtering Method.
 
-    Args: 
+    Attributes:
+        name (str)  : name of method
+        tt_similarity (csr_matrix)  : all tag by tag cosine similarity matrix
+        ss_similarity (csr_matrix)  : all song by song cosine similarity matrix
     Return:
     """    
+
     def __init__(self, name):
         super().__init__(name)
 
@@ -30,16 +38,17 @@ class ItemCFMethod(Method):
         self.ss_similarity = None
 
     def _rate(self, pid, mode):
-        '''
-            rate each playlist.
-            for the item in playlist. calculate idf-weighted similary items.
-
+        """ Make ratings.
+        
+        Rate on items(tag/song) based on test data, which index is pid.
+        
         Args:
-            pid(int): playlist id in test data
-            mode(str): determine which item. tags or songs
+            pid (int)   : playlist id in test data
+            mode (str)  : determine which item. tags or songs
         Return:
             rating(numpy array): playlist and [tags or songs] rating 
-        '''
+        """ 
+
         assert mode in ['tags', 'songs']
 
         n = self.n_tag if mode == 'tags' else self.n_song
@@ -54,32 +63,35 @@ class ItemCFMethod(Method):
         return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        '''
-            initialize necessary variables
+        """ initialize necessary variables for Method.
+
+        initialize necessary data structure.
 
         Args: 
-            n_train(int): number of train data
-            n_test(int): number of test data
-            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
-            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
-            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
-            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
-            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
-            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+            n_train (int)   : number of playlist in train dataset.
+            n_test (int)    : number of playlist in test dataset. 
+            pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+            ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+            transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+            transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
         Return:
-        '''
+        """    
+
         super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
     def train(self, checkpoint_dir='./checkpoints'):
-        '''
-            train the Item Cf Method.
-            Calculate the tag-tag similarity and song-song similarity.
-            Save the similarity matrix
+        """ Train Item CF Method
+
+        Calculate the tag-tag similarity and song-song similarity.
+        Save the similarity matrix
 
         Args: 
-            checkpoint_dir(str): where to save similarity matrix
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
-        '''
+        """
+
         dirname = os.path.join(checkpoint_dir, self.name)
         if not os.path.exists(dirname):
             os.makedirs(dirname, exist_ok=True)
@@ -101,15 +113,17 @@ class ItemCFMethod(Method):
             write_sparse_matrix(self.ss_similarity, filename)
 
     def predict(self, pid):
-        '''
-            rating the playlist
+        """ Make ratings
+
+        rate the playlist, which index in test sparse matrix is pid.
 
         Args: 
-            pid(int): playlist id
+            pid(int)    : playlist id in test sparse matrix
         Return:
-            rating_tag(numpy array): playlist id and tag rating
-            rating_song(numpy array): playlist id and song rating
-        '''
+            rating_tag(ndarray) : playlist id and tag rating
+            rating_song(ndarray): playlist id and song rating
+        """
+
         rating_tag = self._rate(pid, 'tags')
         rating_song = self._rate(pid, 'songs')
 

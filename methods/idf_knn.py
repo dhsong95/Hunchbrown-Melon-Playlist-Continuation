@@ -1,28 +1,38 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
+""" Idf Knn Method class.
+
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.14
+
+Idf KNN Method class for Playlist continuation task.
 """
 
 import os
 
 import numpy as np
 
-from processing.process_sparse_matrix import write_sparse_matrix
-from processing.process_sparse_matrix import load_sparse_matrix
+from methods.method import Method
+
 from processing.process_sparse_matrix import horizontal_stack
+from processing.process_sparse_matrix import load_sparse_matrix
+from processing.process_sparse_matrix import write_sparse_matrix
 
 from similarity.cosine_similarity import calculate_cosine_similarity
 
-from methods.method import Method
-
 class IdfKNNMethod(Method):
-    """
-    KNN based on IDF Transformed sparse matrix
+    """ Idf Knn Method class for playlist continuation task.
+    
+    KNN based model with IDF Transformed sparse matrix.
 
-    Args: 
+    Attributes:
+        name (str)  : name of method
+        k_ratio (float)    : portion of k
+        k (int) : number of neighbors to be considered base on k_ratio
+        pp_similarity (csr_matrix)  : playlist in test to playlist in train cosine similarity
+        neighbors (csr_matrix)  : sorted index of playlist based on similarity
     Return:
     """    
+
     def __init__(self, name, k_ratio=0.001):
         super().__init__(name)
 
@@ -35,62 +45,64 @@ class IdfKNNMethod(Method):
         self.neighbors = None
 
     def _rate(self, pid, mode):
-        '''
-            rate each playlist.
-            for the item in playlist. calculate consider only the k nearest neighbors.
-
+        """ Make ratings.
+        
+        Rate on items(tag/song) based on test data, which index is pid.
+        
         Args:
-            pid(int): playlist id in test data
-            mode(str): determine which item. tags or songs
+            pid (int)   : playlist id in test data
+            mode (str)  : determine which item. tags or songs
         Return:
             rating(numpy array): playlist and [tags or songs] rating 
-        '''        
+        """ 
+
         assert mode in ['tags', 'songs']
 
-        n = self.n_tag if mode == 'tags' else self.n_song
-        train = self.pt_train if mode == 'tags' else self.ps_train
-        test = self.pt_test if mode == 'tags' else self.ps_test
+        n = self.n_tag if mode == 'tags' else self.n_song           # number of item in total
+        train = self.pt_train if mode == 'tags' else self.ps_train 
         similarity = self.pp_similarity
-        idf = self.transformer_tag.idf_ if mode == 'tags' else self.transformer_song.idf_
 
         rating = np.zeros(n)
-        for neighbor in self.pp_similarity[pid, :].toarray().argsort(axis=-1)[:, ::-1][0, :self.k]:
+        for neighbor in similarity[pid, :].toarray().argsort(axis=-1)[:, ::-1][0, :self.k]:
             rating += (similarity[pid, neighbor] * train[neighbor, :]).toarray().reshape(-1)  
         
         return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        '''
-            initialize necessary variables
+        """ initialize necessary variables for Method.
+
+        initialize necessary data structure.
 
         Args: 
-            n_train(int): number of train data
-            n_test(int): number of test data
-            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
-            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
-            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
-            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
-            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
-            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+            n_train (int)   : number of playlist in train dataset.
+            n_test (int)    : number of playlist in test dataset. 
+            pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+            ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+            transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+            transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
         Return:
-        '''
+        """    
+
         super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
         k = int(self.k_ratio * self.n_train)
         # make k to be multiply of 10
         self.k = k + (10 - (k % 10))
-        print('KNN works with {} neighbor'.format(self.k))
+        print('\tKNN works with {} neighbor...'.format(self.k))
 
     def train(self, checkpoint_dir='./checkpoints'):
-        '''
-            train the IDF KNN Method.
-            find k nearest neighbors based on playlist to playlist similarity
-            Save the similarity matrix
+        """ Train Idf KNN Method
+
+        find k nearest neighbors based on playlist in test to playlist in train similarity
+        Save the similarity matrix
 
         Args: 
-            checkpoint_dir(str): where to save similarity matrix
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
-        '''
+        """
+
         pt_idf_train = self.transformer_tag.transform(self.pt_train)
         ps_idf_train = self.transformer_song.transform(self.ps_train)
         pt_idf_test = self.transformer_tag.transform(self.pt_test)
@@ -112,15 +124,17 @@ class IdfKNNMethod(Method):
             write_sparse_matrix(self.pp_similarity, filename)
 
     def predict(self, pid):
-        '''
-            rating the playlist
+        """ Make ratings
+
+        rate the playlist, which index in test sparse matrix is pid.
 
         Args: 
-            pid(int): playlist id
+            pid(int)    : playlist id in test sparse matrix
         Return:
-            rating_tag(numpy array): playlist id and tag rating
-            rating_song(numpy array): playlist id and song rating
-        '''
+            rating_tag(ndarray) : playlist id and tag rating
+            rating_song(ndarray): playlist id and song rating
+        """
+
         rating_tag = self._rate(pid, mode='tags')
         rating_song = self._rate(pid, mode='songs')
 

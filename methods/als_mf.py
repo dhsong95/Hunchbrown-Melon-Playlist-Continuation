@@ -1,32 +1,41 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
+""" Idf Knn Method class.
+
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.14
+
+ALS Matrix Factorization Method class for Playlist continuation task.
 """
 
 import os
 import pickle
 
-import numpy as np
 import implicit
 from implicit.als import AlternatingLeastSquares
-
-from processing.process_sparse_matrix import write_sparse_matrix
-from processing.process_sparse_matrix import load_sparse_matrix
-from processing.process_sparse_matrix import horizontal_stack
-from processing.process_sparse_matrix import vertical_stack
-
-from similarity.cosine_similarity import calculate_cosine_similarity
+import numpy as np
 
 from methods.method import Method
 
-class ALSMFMethod(Method):
-    """
-    Matrix Factorization based method
+from processing.process_sparse_matrix import horizontal_stack
+from processing.process_sparse_matrix import load_sparse_matrix
+from processing.process_sparse_matrix import vertical_stack
+from processing.process_sparse_matrix import write_sparse_matrix
 
-    Args: 
+from similarity.cosine_similarity import calculate_cosine_similarity
+
+class ALSMFMethod(Method):
+    """ ALS Matrix Factorization Method class for playlist continuation task.
+    
+    ALS Matrix Factorization Method.
+
+    Attributes:
+        name (str)  : name of method
+        params (dict)   : ALS model parameters
+        model_tag (ALS Model)  : ALS Model for tag
+        model_song (ALS Mode)  : ALS Model for song
     Return:
     """    
+
     def __init__(self, name, params):
         super().__init__(name)
 
@@ -38,16 +47,17 @@ class ALSMFMethod(Method):
         self.model_song = None
 
     def _rate(self, pid, mode):
-        '''
-            rate each playlist.
-            for the item in playlist.
-
+        """ Make ratings.
+        
+        Rate on items(tag/song) based on test data, which index is pid.
+        
         Args:
-            pid(int): playlist id in test data
-            mode(str): determine which item. tags or songs
+            pid (int)   : playlist id in test data
+            mode (str)  : determine which item. tags or songs
         Return:
             rating(numpy array): playlist and [tags or songs] rating 
-        '''        
+        """ 
+        
         assert mode in ['tags', 'songs']
 
         model = self.model_tag if mode == 'tags' else self.model_song
@@ -58,20 +68,22 @@ class ALSMFMethod(Method):
         return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        '''
-            initialize necessary variables
+        """ initialize necessary variables for Method.
+
+        initialize necessary data structure.
 
         Args: 
-            n_train(int): number of train data
-            n_test(int): number of test data
-            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
-            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
-            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
-            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
-            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
-            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+            n_train (int)   : number of playlist in train dataset.
+            n_test (int)    : number of playlist in test dataset. 
+            pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+            ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+            transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+            transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
         Return:
-        '''
+        """    
+
         super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
         self.model_tag = AlternatingLeastSquares(factors=self.params['tag']['factors'], 
@@ -87,15 +99,16 @@ class ALSMFMethod(Method):
 
 
     def train(self, checkpoint_dir='./checkpoints'):
-        '''
-            train MF Method.
-            ALS Model fitting
-            Save ALS Model
+        """ Train ALS MF Method
+
+        Fit ALS Model on train and test dataset.
+        Save ALS Model.
 
         Args: 
-            checkpoint_dir(str): where to save model
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
-        '''
+        """
+
         dirname = os.path.join(checkpoint_dir, self.name)
         if not os.path.exists(dirname):
             os.makedirs(dirname, exist_ok=True)
@@ -123,16 +136,18 @@ class ALSMFMethod(Method):
                 pickle.dump(self.model_song, f)
 
     def predict(self, pid):
-        '''
-            rating the playlist
+        """ Make ratings
+
+        rate the playlist, which index in test sparse matrix is pid.
 
         Args: 
-            pid(int): playlist id
+            pid(int)    : playlist id in test sparse matrix
         Return:
-            rating_tag(numpy array): playlist id and tag rating
-            rating_song(numpy array): playlist id and song rating
-        '''
-        rating_tag = np.zeros(self.n_tag)
+            rating_tag(ndarray) : playlist id and tag rating
+            rating_song(ndarray): playlist id and song rating
+        """
+
+        rating_tag = self._rate(pid, mode='tags')
         rating_song = self._rate(pid, mode='songs')
 
         return rating_tag, rating_song

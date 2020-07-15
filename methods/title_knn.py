@@ -1,40 +1,52 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
+""" Idf Knn Method class.
+
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.14
+
+Title KNN Method class for Playlist continuation task, especially for cold start problem.
 """
 
 import os
 import pickle
-from tqdm import tqdm
-from collections import namedtuple
 
+
+from gensim.models import doc2vec
 import numpy as np
 from scipy.sparse import csr_matrix
-from gensim.models import doc2vec
-from gensim.models.doc2vec import TaggedDocument
-from sklearn.decomposition import TruncatedSVD
+from tqdm import tqdm           # Need to be removed afterwards
 
 from khaiii import KhaiiiApi
 from khaiii import KhaiiiExcept
 
-from processing.process_sparse_matrix import write_sparse_matrix
-from processing.process_sparse_matrix import load_sparse_matrix
+from methods.method import Method
+
 from processing.process_sparse_matrix import horizontal_stack
-from processing.process_sparse_matrix import vertical_stack
+from processing.process_sparse_matrix import load_sparse_matrix
 from processing.process_sparse_matrix import transform_idf
+from processing.process_sparse_matrix import vertical_stack
+from processing.process_sparse_matrix import write_sparse_matrix
 
 from similarity.cosine_similarity import calculate_cosine_similarity
 
-from methods.method import Method
-
 class TitleKNNMethod(Method):
-    """
-    Truncated SVD with using Name
+    """ Title KNN Method class for playlist continuation task cold start problem.
+    
+    Title KNN Method.
 
-    Args: 
+    Attributes:
+        name (str)  : name of method
+        playlist2idx (dict) : playlist to index dictionary.
+        title2playlist (dict)   : title to list of playlists dictionary.
+        token2idx (dict)    : NLP processed token to index dictionary.
+        token2title (dict)  : NLP processed token to list of titles dictionary. 
+        doc2vec_model (doc2vec) : Doc2Vec Model in gensim.
+        tt_matrix (sparse matirx)   : NLP processed token to tag matrix
+        ts_matirx (sparse matrix)   : NLP processed token to song matrix
+        api (KhaiiApi)  : Korean Tokenizer
     Return:
     """    
+
     def __init__(self, name):
         super().__init__(name)
 
@@ -48,84 +60,98 @@ class TitleKNNMethod(Method):
         self.tt_matrix = None
         self.ts_matrix = None
 
+        self.api = KhaiiiApi()
+
+
+    def _tokenize_title(self, title):
+        """ Tokenize playlist title.
+        
+        Tokenize playlist title using khaiii.
+
+        Attributes:
+            title (str) : playlist title
+        Return:
+            token (list)   : list of "lexicon/tag" token
+        """    
+
+        token = list()
+        try:
+            words = self.api.analyze(title)
+        except KhaiiiExcept:
+            words = list()
+            # token = ['/ZZ']
+
+        for word in words:
+            for morph in word.morphs:
+                if morph.tag[0] not in ['J', 'S', 'Z']:
+                    token.append('/'.join([morph.lex, morph.tag]))
+            
+        return token
+
     def _prepare_data(self):
+        """ Prepare necessary data structures for Title KNN Method.
+
+        Prepare necessary data structures for Title KNN Method.
+
+        """    
+
         ### tokenize using khaiii
         ### make csr matrix (token - tag | song)
-        api = KhaiiiApi()
         row = {'tag': list(), 'song': list()}
         col = {'tag': list(), 'song': list()}
         data = {'tag': list(), 'song': list()}
-        rid = 0
-        for title, playlist in tqdm(self.title2playlist.items()):
-            tokens = list()
-            try:
-                words = api.analyze(title)
-            except KhaiiiExcept:
-                words = list()
-                # tokens = list()
-                tokens = ['/ZZ']
 
-            for word in words:
-                for morph in word.morphs:
-                    tokens.append('/'.join([morph.lex, morph.tag]))
-                    # if morph.tag[0] not in ['J', 'S', 'Z']:
-                    #     tokens.append('/'.join([morph.lex, morph.tag]))
+        token_id = 0
+        for title, playlist in self.title2playlist.items():
 
-            if len(tokens) > 0:
-                tokens = ' '.join(tokens)
+            token = self._tokenize_title(title)
 
-                if tokens in self.token2idx:
-                    rid = self.token2idx[tokens]
+            if len(token) > 0:
+                token = ' '.join(token)
+
+                if token in self.token2idx:
+                    token_id = self.token2idx[token]
                 else:
-                    self.token2title[tokens] = list()
-                    self.token2idx[tokens] = rid
+                    self.token2title[token] = list()
+                    self.token2idx[token] = token_id
 
-                self.token2title[tokens].append(title)
+                self.token2title[token].append(title)
 
                 for p in playlist:
-                    idx = self.playlist2idx[p]
-                    if idx < self.n_train:
-                        for cid in self.pt_train[idx].nonzero()[1]:
-                            row['tag'].append(rid)
-                            col['tag'].append(cid)
+                    playlist_id = self.playlist2idx[p]
+                    if playlist_id < self.n_train:
+                        for item_id in self.pt_train[playlist_id].nonzero()[1]:
+                            row['tag'].append(token_id)
+                            col['tag'].append(item_id)
                             data['tag'].append(1)
 
-                        for cid in self.ps_train[idx].nonzero()[1]:
-                            row['song'].append(rid)
-                            col['song'].append(cid)
+                        for item_id in self.ps_train[playlist_id].nonzero()[1]:
+                            row['song'].append(token_id)
+                            col['song'].append(item_id)
                             data['song'].append(1)
-                rid = len(self.token2idx)
 
-        self.tt_matrix = csr_matrix((data['tag'], (row['tag'], col['tag'])))
-        self.ts_matrix = csr_matrix((data['song'], (row['song'], col['song'])))
+                token_id = len(self.token2idx)
+
+        self.tt_matrix = csr_matrix((data['tag'], (row['tag'], col['tag'])), dtype=float)
+        self.ts_matrix = csr_matrix((data['song'], (row['song'], col['song'])), dtype=float)
 
         _, self.tt_matrix = transform_idf(self.tt_matrix)
         _, self.ts_matrix = transform_idf(self.ts_matrix)
 
-        # for a in range(1000, 1010):
-        #     print(self.ts_matrix[a].nonzero())
-        #     idx2token = {idx:token for token, idx in self.token2idx.items()}
-        #     token = idx2token[a]
-        #     for title in self.token2title[token]:
-        #         for playlist in self.title2playlist[title]:
-        #             idx = self.playlist2idx[playlist]
-        #             if idx < self.ps_train.shape[0]:
-        #                 print(self.ps_train[idx].nonzero())
-
-        #     print(idx2token[a])
-
     def _rate(self, pid, mode):
-        '''
-            rate each playlist.
-            for the item in playlist.
-
+        """ Make ratings.
+        
+        Rate on items(tag/song) based on test data, which index is pid.
+        
         Args:
-            pid(int): playlist id in test data
-            mode(str): determine which item. tags or songs
+            pid (int)   : playlist id in test data
+            mode (str)  : determine which item. tags or songs
         Return:
             rating(numpy array): playlist and [tags or songs] rating 
-        '''        
+        """ 
+
         assert mode in ['tags', 'songs']
+
         title_matrix = self.tt_matrix if mode == 'tags' else self.ts_matrix
         n = self.n_tag if mode == 'tags' else self.n_song
         max_cnt = 100 if mode == 'tags' else 300
@@ -141,34 +167,19 @@ class TitleKNNMethod(Method):
 
         playlist = idx2playlist[pid + self.n_train]
         title = playlist2title[playlist]
-
-        api = KhaiiiApi()
-        token = list()
-        try:
-            words = api.analyze(title)
-        except KhaiiiExcept:
-            words = list()
-            tokens = ['/ZZ']
-
-        for word in words:
-            for morph in word.morphs:
-                token.append('/'.join([morph.lex, morph.tag]))
-                # if morph.tag[0] not in ['J', 'S', 'Z']:
-                #     token.append('/'.join([morph.lex, morph.tag]))
+        token = self._tokenize_title(title)
 
         if len(token) == 0:
             return rating
 
-        idx = self.token2idx[' '.join(token)]
+        token_id = self.token2idx[' '.join(token)]
         counter = 0
 
-        if idx < title_matrix.shape[0] and title_matrix[idx].count_nonzero() > 0:
-            rating += (title_matrix[idx].toarray() * 1).reshape(-1)
+        if token_id < title_matrix.shape[0] and title_matrix[token_id].count_nonzero() > 0:
+            rating += (title_matrix[token_id].toarray()).reshape(-1)
             counter += 1
 
-        for tag, similarity in self.doc2vec_model.docvecs.most_similar(positive=[idx], topn=len(self.token2idx)):
-            # if counter >= 100 or similarity < 0.5:
-            #     break
+        for tag, similarity in self.doc2vec_model.docvecs.most_similar(positive=[token_id], topn=len(self.token2idx)):
             if counter >= max_cnt or similarity < min_similarity:
                 break
 
@@ -179,33 +190,35 @@ class TitleKNNMethod(Method):
         return rating
 
     def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
-        '''
-            initialize necessary variables
+        """ initialize necessary variables for Method.
+
+        initialize necessary data structure.
 
         Args: 
-            n_train(int): number of train data
-            n_test(int): number of test data
-            pt_train(scipy csr matrix): playlist-tag sparse matrix from train data
-            ps_train(scipy csr matrix): playlist-song sparse matrix from train data
-            pt_test(scipy csr matrix): playlist-tag sparse matrix from test data
-            ps_test(scipy csr matrix): playlist-song sparse matrix from test data
-            transformer_tag(sci-kit learn TfIdfTransformer model): tag TfIdfTransformer model
-            transformer_song(sci-kit learn TfIdfTransformer model): song TfIdfTransformer model
+            n_train (int)   : number of playlist in train dataset.
+            n_test (int)    : number of playlist in test dataset. 
+            pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            ps_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
+            pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
+            ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
+            transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
+            transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
         Return:
-        '''
+        """    
+
         super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
 
     def train(self, checkpoint_dir='./checkpoints'):
-        '''
-            train MF Method.
-            ALS Model fitting
-            Save ALS Model
+        """ Train Title KNN Method
+
+        Fit gensim Doc2Vec Model on train and test playlist title dataset.
+        Save doc2vec Model.
 
         Args: 
-            checkpoint_dir(str): where to save model
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
-        '''
+        """
 
         self._prepare_data()
 
@@ -217,12 +230,12 @@ class TitleKNNMethod(Method):
         if os.path.exists(filename):
             self.doc2vec_model = doc2vec.Doc2Vec.load(filename)
         else:
-            tagged_doc = [TaggedDocument(token.split(), [idx]) for token, idx in self.token2idx.items()]
+            tagged_doc = [doc2vec.TaggedDocument(token.split(), [idx]) for token, idx in self.token2idx.items()]
 
             self.doc2vec_model = doc2vec.Doc2Vec(
-                dm=0,            # PV-DBOW / default 1
-                dbow_words=1,    # w2v simultaneous with DBOW d2v / default 0
-                window=8,        # distance between the predicted word and context words
+                dm=0,            
+                dbow_words=1,    
+                window=8,        
                 vector_size=300, # vector size
                 alpha=0.025,     # learning-rate
                 seed=2020,
@@ -243,14 +256,15 @@ class TitleKNNMethod(Method):
             self.doc2vec_model.save(filename)
 
     def predict(self, pid, mode):
-        '''
-            rating the playlist
+        """ Make ratings based on mode.
+
+        rate the playlist, which index in test sparse matrix is pid based on mode.
 
         Args: 
-            pid(int): playlist id
+            pid (int)   : playlist id in test sparse matrix
+            mode (str)  : tags or songs
         Return:
-            rating_tag(numpy array): playlist id and tag rating
-            rating_song(numpy array): playlist id and song rating
-        '''
+            rating (ndarray)    : playlist id and rating
+        """
         rating = self._rate(pid, mode=mode) 
         return rating

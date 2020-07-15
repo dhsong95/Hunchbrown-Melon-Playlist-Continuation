@@ -11,9 +11,9 @@ import fire
 import numpy as np
 from tqdm import tqdm
 
-from processing.process_dataframe import to_dataframe
 from processing.process_dataframe import get_item_idx_dictionary
 from processing.process_dataframe import map_title_to_playlist
+from processing.process_dataframe import to_dataframe
 from processing.process_json import load_json
 from processing.process_json import write_json
 from processing.process_sparse_matrix import to_sparse_matrix
@@ -22,7 +22,6 @@ from processing.process_sparse_matrix import transform_idf
 from methods.als_mf import ALSMFMethod
 from methods.idf_knn import IdfKNNMethod
 from methods.item_cf import ItemCFMethod
-from methods.nmf_mf import NMFMethod
 from methods.title_knn import TitleKNNMethod
 
 from utils.normalize import normalize_zero_to_one
@@ -164,6 +163,7 @@ class PlaylistContinuation:
             )
             method.train()
 
+        print('Training Method\t{}...'.format(self.title_knn_method.name))        
         self.title_knn_method.initialize(
             self.n_train, self.n_test, 
             self.pt_train, self.ps_train, self.pt_test, self.ps_test, 
@@ -318,15 +318,15 @@ class PlaylistContinuation:
         print('Training methods...')
         als_params = {
             'tag': {
-                'factors': 256,
+                'factors': 512,     
                 'regularization': 0.001,
-                'iterations': 500,
+                'iterations': 300, # 250 -> 300
                 'confidence': 100
             },
             'song': {
                 'factors': 512,
                 'regularization': 0.001,
-                'iterations': 1000,
+                'iterations': 200, # 250 -> 200
                 'confidence': 100
             }
         }
@@ -334,12 +334,12 @@ class PlaylistContinuation:
         self.methods = [
             ItemCFMethod('item-collaborative-filtering'), 
             IdfKNNMethod('idf-knn', k_ratio=0.001),
-            # ALSMFMethod('als-matrix-factorization', params=als_params)
+            ALSMFMethod('als-matrix-factorization', params=als_params)
         ]
         self.weights = [
             (0.6, 0.4),
             (0.4, 0.6),
-            # (0, 0.5),
+            (0.2, 0.5),   # (0, 0.5) -> (0.2, 0.5)
         ]
         self._train_methods()
 

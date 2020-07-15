@@ -107,8 +107,6 @@ class ALSColab:
             method.initialize(self.n_train, self.n_test, self.pt_train, self.ps_train, self.pt_test, self.ps_test, self.transformer_tag, self.transformer_song)
             method.train()
 
-
-  
     def run(self, train_fname, test_fname):
         '''
             running playlist continuation task.
@@ -128,17 +126,31 @@ class ALSColab:
         self._prepare_data(train, test)
 
         print('Training methods...')
+        # als_params = {
+        #     'tag': {
+        #         'factors': 256,
+        #         'regularization': 0.001,
+        #         'iterations': 500,
+        #         'confidence': 100
+        #     },
+        #     'song': {
+        #         'factors': 512,
+        #         'regularization': 0.001,
+        #         'iterations': 1000,
+        #         'confidence': 100
+        #     }
+        # }
         als_params = {
             'tag': {
-                'factors': 256,
+                'factors': 512,
                 'regularization': 0.001,
-                'iterations': 500,
+                'iterations': 300,  # 250 -> 300
                 'confidence': 100
             },
             'song': {
                 'factors': 512,
                 'regularization': 0.001,
-                'iterations': 1000,
+                'iterations': 200,  # 250 -> 200
                 'confidence': 100
             }
         }
