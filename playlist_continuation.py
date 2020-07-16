@@ -326,7 +326,7 @@ class PlaylistContinuation:
             'song': {
                 'factors': 512,
                 'regularization': 0.001,
-                'iterations': 200, # 250 -> 200
+                'iterations': 250, # 200 -> 250
                 'confidence': 100
             }
         }
@@ -337,9 +337,9 @@ class PlaylistContinuation:
             ALSMFMethod('als-matrix-factorization', params=als_params)
         ]
         self.weights = [
-            (0.6, 0.4),
-            (0.4, 0.6),
-            (0.2, 0.5),   # (0, 0.5) -> (0.2, 0.5)
+            (0.5, 0.25),    # (0.6, 0.4) -> (0.5, 0.25)
+            (0.35, 0.3),    # (0.4, 0.6) -> (0.35, 0.3)
+            (0.15, 0.45),   # (0.2, 0.8) -> (0.15, 0.45)
         ]
         self._train_methods()
 
