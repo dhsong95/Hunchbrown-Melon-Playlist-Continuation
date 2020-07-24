@@ -89,25 +89,31 @@ class ItemCFMethod(Method):
 
         super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
 
-        dirname = os.path.join(checkpoint_dir, self.name)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname, exist_ok=True)
+        pt_idf_train = self.transformer_tag.transform(self.pt_train)
+        self.tt_similarity = calculate_cosine_similarity(pt_idf_train.T)
 
-        filename = os.path.join(dirname, 'tag-similarity.npz')
-        if os.path.exists(filename):
-            self.tt_similarity = load_sparse_matrix(filename)
-        else:
-            pt_idf_train = self.transformer_tag.transform(self.pt_train)
-            self.tt_similarity = calculate_cosine_similarity(pt_idf_train.T)
-            write_sparse_matrix(self.tt_similarity, filename)
+        ps_idf_train = self.transformer_song.transform(self.ps_train)
+        self.ss_similarity = calculate_cosine_similarity(ps_idf_train.T)
 
-        filename = os.path.join(dirname, 'song-similarity.npz')
-        if os.path.exists(filename):
-            self.ss_similarity = load_sparse_matrix(filename)
-        else:
-            ps_idf_train = self.transformer_song.transform(self.ps_train)
-            self.ss_similarity = calculate_cosine_similarity(ps_idf_train.T)
-            write_sparse_matrix(self.ss_similarity, filename)
+        # dirname = os.path.join(checkpoint_dir, self.name)
+        # if not os.path.exists(dirname):
+        #     os.makedirs(dirname, exist_ok=True)
+
+        # filename = os.path.join(dirname, 'tag-similarity.npz')
+        # if os.path.exists(filename):
+        #     self.tt_similarity = load_sparse_matrix(filename)
+        # else:
+        #     pt_idf_train = self.transformer_tag.transform(self.pt_train)
+        #     self.tt_similarity = calculate_cosine_similarity(pt_idf_train.T)
+        #     write_sparse_matrix(self.tt_similarity, filename)
+
+        # filename = os.path.join(dirname, 'song-similarity.npz')
+        # if os.path.exists(filename):
+        #     self.ss_similarity = load_sparse_matrix(filename)
+        # else:
+        #     ps_idf_train = self.transformer_song.transform(self.ps_train)
+        #     self.ss_similarity = calculate_cosine_similarity(ps_idf_train.T)
+        #     write_sparse_matrix(self.ss_similarity, filename)
 
     def predict(self, pid):
         """ Make ratings

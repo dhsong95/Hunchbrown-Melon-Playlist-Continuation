@@ -160,7 +160,6 @@ class PlaylistContinuation:
                 self.pt_train, self.ps_train, self.pt_test, self.ps_test, 
                 self.transformer_tag, self.transformer_song
             )
-            # method.train()  # merge into initialize
 
         # Additional data structure necessary for title method
         print('Preparing Method\t{}...'.format(self.title_method.name))        
@@ -349,11 +348,11 @@ class PlaylistContinuation:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('train_fname', type=str, metavar='Train File Name', default='./res/train.json')
-    parser.add_argument('test_fname', type=str, metavar='Test File Name', default='./res/test.json')
+    parser.add_argument('--train_fname', default='./res/train.json', type=str, metavar='Train File Name', required=False)
+    parser.add_argument('--test_fname', default='./res/test.json', type=str, metavar='Test File Name', required=False)
     args = parser.parse_args()
 
-    train_fname = args.train_fname
+    train_fname = args.train_fname 
     test_fname = args.test_fname
 
     inference = PlaylistContinuation()

@@ -98,20 +98,26 @@ class IdfKNNMethod(Method):
         pt_idf_test = self.transformer_tag.transform(self.pt_test)
         ps_idf_test = self.transformer_song.transform(self.ps_test)
 
-        dirname = os.path.join(checkpoint_dir, self.name)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname, exist_ok=True)
+        self.pp_similarity = calculate_cosine_similarity(
+            # Determine Playlist Similarity more emphasis on song feature 
+            horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
+            horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
+        )
 
-        filename = os.path.join(dirname, 'playlist-similarity.npz')
-        if os.path.exists(filename):
-            self.pp_similarity = load_sparse_matrix(filename)
-        else:
-            self.pp_similarity = calculate_cosine_similarity(
-                # Determine Playlist Similarity more emphasis on song feature 
-                horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
-                horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
-            )
-            write_sparse_matrix(self.pp_similarity, filename)
+        # dirname = os.path.join(checkpoint_dir, self.name)
+        # if not os.path.exists(dirname):
+        #     os.makedirs(dirname, exist_ok=True)
+
+        # filename = os.path.join(dirname, 'playlist-similarity.npz')
+        # if os.path.exists(filename):
+        #     self.pp_similarity = load_sparse_matrix(filename)
+        # else:
+        #     self.pp_similarity = calculate_cosine_similarity(
+        #         # Determine Playlist Similarity more emphasis on song feature 
+        #         horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
+        #         horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
+        #     )
+        #     write_sparse_matrix(self.pp_similarity, filename)
 
     def predict(self, pid):
         """ Make ratings

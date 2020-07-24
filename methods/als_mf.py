@@ -114,50 +114,63 @@ class ALSMFMethod(Method):
                                                   calculate_training_loss=True,
                                                   use_gpu=implicit.cuda.HAS_CUDA)
 
-        dirname = os.path.join(checkpoint_dir, self.name)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname, exist_ok=True)
+        data = vertical_stack(self.pt_train, self.pt_test)
+        data = (data * self.params['tag']['confidence']).astype('double')
+        self.model_tag.fit(data.T)            
 
-        filename = os.path.join(dirname, 'als-mf-tag.pkl')
-        if os.path.exists(filename):
-            with open(filename, 'rb') as f:
-                self.model_tag = pickle.load(f)
-        else:
-            data = vertical_stack(self.pt_train, self.pt_test)
-            data = (data * self.params['tag']['confidence']).astype('double')
-            self.model_tag.fit(data.T)            
-            with open(filename, 'wb') as f:
-                pickle.dump(self.model_tag, f)
+        data = vertical_stack(self.ps_train, self.ps_test)
+        data = (data * self.params['song']['confidence']).astype('double')
+        self.model_song.fit(data.T)
 
-        filename = os.path.join(dirname, 'als-mf-song.pkl')
-        if os.path.exists(filename):
-            with open(filename, 'rb') as f:
-                self.model_song = pickle.load(f)
-        else:
-            data = vertical_stack(self.ps_train, self.ps_test)
-            data = (data * self.params['song']['confidence']).astype('double')
-            self.model_song.fit(data.T)
-            with open(filename, 'wb') as f:
-                pickle.dump(self.model_song, f)
+        # dirname = os.path.join(checkpoint_dir, self.name)
+        # if not os.path.exists(dirname):
+        #     os.makedirs(dirname, exist_ok=True)
+
+        # filename = os.path.join(dirname, 'als-mf-tag.pkl')
+        # if os.path.exists(filename):
+        #     with open(filename, 'rb') as f:
+        #         self.model_tag = pickle.load(f)
+        # else:
+        #     data = vertical_stack(self.pt_train, self.pt_test)
+        #     data = (data * self.params['tag']['confidence']).astype('double')
+        #     self.model_tag.fit(data.T)            
+        #     with open(filename, 'wb') as f:
+        #         pickle.dump(self.model_tag, f)
+
+        # filename = os.path.join(dirname, 'als-mf-song.pkl')
+        # if os.path.exists(filename):
+        #     with open(filename, 'rb') as f:
+        #         self.model_song = pickle.load(f)
+        # else:
+        #     data = vertical_stack(self.ps_train, self.ps_test)
+        #     data = (data * self.params['song']['confidence']).astype('double')
+        #     self.model_song.fit(data.T)
+        #     with open(filename, 'wb') as f:
+        #         pickle.dump(self.model_song, f)
 
         pt_idf_train = self.transformer_tag.transform(self.pt_train)
         ps_idf_train = self.transformer_song.transform(self.ps_train)
         pt_idf_test = self.transformer_tag.transform(self.pt_test)
         ps_idf_test = self.transformer_song.transform(self.ps_test)
 
-        dirname = os.path.join(checkpoint_dir, self.name)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname, exist_ok=True)
+        self.pp_similarity = calculate_cosine_similarity(
+            horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
+            horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
+        )
 
-        filename = os.path.join(dirname, 'playlist-similarity.npz')
-        if os.path.exists(filename):
-            self.pp_similarity = load_sparse_matrix(filename)
-        else:
-            self.pp_similarity = calculate_cosine_similarity(
-                horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
-                horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
-            )
-            write_sparse_matrix(self.pp_similarity, filename)
+        # dirname = os.path.join(checkpoint_dir, self.name)
+        # if not os.path.exists(dirname):
+        #     os.makedirs(dirname, exist_ok=True)
+
+        # filename = os.path.join(dirname, 'playlist-similarity.npz')
+        # if os.path.exists(filename):
+        #     self.pp_similarity = load_sparse_matrix(filename)
+        # else:
+        #     self.pp_similarity = calculate_cosine_similarity(
+        #         horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
+        #         horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
+        #     )
+        #     write_sparse_matrix(self.pp_similarity, filename)
 
     def predict(self, pid):
         """ Make ratings

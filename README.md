@@ -25,7 +25,7 @@ $> python inference.py
 inference.py는 argparse를 통해 command line arguments를 받을 수 있으며, 기본값은 학습을 위한 `./res/train.json`과 테스트를 위한 `./res/test.json`이다. 검증시에는 학습과 테스트를 위한 파일명을 변경한다.
 
 ```bash
-$> python inference.py ./res/train.json ./res/val.json
+$> python inference.py --train_fname=./res/train.json --test_fname=./res/val.json
 ```
 
 빠른 implicit 계산을 위해서 **GPU 환경**에서 실행하는 것을 권장한다.
