@@ -2,7 +2,7 @@
 """ Idf Knn Method class.
 
 Author: Hunchbrown - DH Song
-Last Modified: 2020.07.14
+Last Modified: 2020.07.24
 
 ALS Matrix Factorization Method class for Playlist continuation task.
 """
@@ -33,6 +33,7 @@ class ALSMFMethod(Method):
         params (dict)   : ALS model parameters
         model_tag (ALS Model)  : ALS Model for tag
         model_song (ALS Mode)  : ALS Model for song
+        pp_similarity (csr_matirx)  : Playlist in test to Playlist in train similarity
     Return:
     """    
 
@@ -45,6 +46,9 @@ class ALSMFMethod(Method):
         # ALS Model
         self.model_tag = None
         self.model_song = None
+
+        # Playlist-to-Playlist Similarity
+        self.pp_similarity = None
 
     def _rate(self, pid, mode):
         """ Make ratings.
@@ -62,12 +66,24 @@ class ALSMFMethod(Method):
 
         model = self.model_tag if mode == 'tags' else self.model_song
 
-        pid = self.n_train + pid
-        rating = np.dot(model.user_factors[pid, :], model.item_factors.T).reshape(-1)
+        if mode == 'tags':
+            n = self.n_tag
+            similarity = self.pp_similarity
+            k = 100
+            
+            rating = np.zeros(n)
+            neighbors = similarity[pid, :].toarray().argsort(axis=-1)[:, ::-1][0, :k]
+            sims = similarity[pid, neighbors]
+            rating = np.dot(model.user_factors[neighbors, :], model.item_factors.T)
+            rating = np.sum(sims * rating, axis=0)
+        else:        
+            pid = self.n_train + pid    # for validation data
+            rating = np.dot(model.user_factors[pid, :], model.item_factors.T).reshape(-1)
 
+        
         return rating
 
-    def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
+    def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song, checkpoint_dir='./checkpoints'):
         """ initialize necessary variables for Method.
 
         initialize necessary data structure.
@@ -81,6 +97,7 @@ class ALSMFMethod(Method):
             ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
             transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
             transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
         """    
 
@@ -96,18 +113,6 @@ class ALSMFMethod(Method):
                                                   iterations=self.params['song']['iterations'],
                                                   calculate_training_loss=True,
                                                   use_gpu=implicit.cuda.HAS_CUDA)
-
-
-    def train(self, checkpoint_dir='./checkpoints'):
-        """ Train ALS MF Method
-
-        Fit ALS Model on train and test dataset.
-        Save ALS Model.
-
-        Args: 
-            checkpoint_dir (str)    : where to save similarity matrix.
-        Return:
-        """
 
         dirname = os.path.join(checkpoint_dir, self.name)
         if not os.path.exists(dirname):
@@ -134,6 +139,25 @@ class ALSMFMethod(Method):
             self.model_song.fit(data.T)
             with open(filename, 'wb') as f:
                 pickle.dump(self.model_song, f)
+
+        pt_idf_train = self.transformer_tag.transform(self.pt_train)
+        ps_idf_train = self.transformer_song.transform(self.ps_train)
+        pt_idf_test = self.transformer_tag.transform(self.pt_test)
+        ps_idf_test = self.transformer_song.transform(self.ps_test)
+
+        dirname = os.path.join(checkpoint_dir, self.name)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname, exist_ok=True)
+
+        filename = os.path.join(dirname, 'playlist-similarity.npz')
+        if os.path.exists(filename):
+            self.pp_similarity = load_sparse_matrix(filename)
+        else:
+            self.pp_similarity = calculate_cosine_similarity(
+                horizontal_stack(pt_idf_test, ps_idf_test, [0.15, 0.85]),
+                horizontal_stack(pt_idf_train, ps_idf_train, [0.15, 0.85])
+            )
+            write_sparse_matrix(self.pp_similarity, filename)
 
     def predict(self, pid):
         """ Make ratings

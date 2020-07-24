@@ -2,7 +2,7 @@
 """ Idf Knn Method class.
 
 Author: Hunchbrown - DH Song
-Last Modified: 2020.07.14
+Last Modified: 2020.07.20
 
 Idf KNN Method class for Playlist continuation task.
 """
@@ -42,7 +42,6 @@ class IdfKNNMethod(Method):
 
         # test-by-train similarity (p:playlist)
         self.pp_similarity = None
-        self.neighbors = None
 
     def _rate(self, pid, mode):
         """ Make ratings.
@@ -62,16 +61,17 @@ class IdfKNNMethod(Method):
         train = self.pt_train if mode == 'tags' else self.ps_train 
         similarity = self.pp_similarity
 
-        rating = np.zeros(n)
-        for neighbor in similarity[pid, :].toarray().argsort(axis=-1)[:, ::-1][0, :self.k]:
-            rating += (similarity[pid, neighbor] * train[neighbor, :]).toarray().reshape(-1)  
+        rating = np.zeros(n)        
+        neighbors = similarity[pid, :].toarray().argsort(axis=-1)[:, ::-1][0, :self.k]
+        sims = similarity[pid, neighbors]
+        rating = np.sum(sims * train[neighbors, :].toarray(), axis=0).reshape(-1)
         
         return rating
 
-    def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
+    def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song, checkpoint_dir='./checkpoints'):
         """ initialize necessary variables for Method.
 
-        initialize necessary data structure.
+        initialize necessary data structure. calculate similarity.
 
         Args: 
             n_train (int)   : number of playlist in train dataset.
@@ -82,6 +82,7 @@ class IdfKNNMethod(Method):
             ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
             transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
             transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
         """    
 
@@ -91,17 +92,6 @@ class IdfKNNMethod(Method):
         # make k to be multiply of 10
         self.k = k + (10 - (k % 10))
         print('\tKNN works with {} neighbor...'.format(self.k))
-
-    def train(self, checkpoint_dir='./checkpoints'):
-        """ Train Idf KNN Method
-
-        find k nearest neighbors based on playlist in test to playlist in train similarity
-        Save the similarity matrix
-
-        Args: 
-            checkpoint_dir (str)    : where to save similarity matrix.
-        Return:
-        """
 
         pt_idf_train = self.transformer_tag.transform(self.pt_train)
         ps_idf_train = self.transformer_song.transform(self.ps_train)

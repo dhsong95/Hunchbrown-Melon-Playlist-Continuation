@@ -2,7 +2,7 @@
 """ Base Method class.
 
 Author: Hunchbrown - DH Song
-Last Modified: 2020.07.14
+Last Modified: 2020.07.20
 
 Base Method class for Playlist continuation task.
 """
@@ -16,7 +16,7 @@ class Method:
         name (str)  : name of method
         n_train (int)   : number of playlist in train dataset.
         n_test (int)    : number of playlist in test dataset. 
-        n_tag (int)   : number of tag in train and test dataset.
+        n_tag (int) : number of tag in train and test dataset.
         n_song (int)    : number of song in train and test dataset. 
         pt_train (csr_matrix)   : playlist to tag sparse matrix made from train dataset.
         pt_test (csr_matrix)    : playlist to tag sparse matrix made from test dataset.
@@ -26,6 +26,7 @@ class Method:
         transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
     Return:
     """    
+
     def __init__(self, name):
         # name of method
         self.name = name

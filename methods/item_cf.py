@@ -2,13 +2,14 @@
 """ Idf Knn Method class.
 
 Author: Hunchbrown - DH Song
-Last Modified: 2020.07.14
+Last Modified: 2020.07.20
 
 Item CF Method class for Playlist continuation task.
 """
 
 import os
 
+from numba import jit
 import numpy as np
 
 from methods.method import Method
@@ -17,6 +18,11 @@ from processing.process_sparse_matrix import load_sparse_matrix
 from processing.process_sparse_matrix import write_sparse_matrix
 
 from similarity.cosine_similarity import calculate_cosine_similarity
+
+@jit(nopython=True, cache=True)
+def numba_calculate(similarity, idf, items):
+    rating = np.sum(similarity * idf[items].reshape(-1, 1), axis=0).reshape(-1)
+    return rating
 
 class ItemCFMethod(Method):
     """ Item Collaborative Filterint Method class for playlist continuation task.
@@ -57,15 +63,16 @@ class ItemCFMethod(Method):
         idf = self.transformer_tag.idf_ if mode == 'tags' else self.transformer_song.idf_
 
         rating = np.zeros(n)
-        for item in test[pid, :].nonzero()[1]:
-            rating += (similarity[item, :] * idf[item]).toarray().reshape(-1)
+        items = test[pid, :].nonzero()[1]
+        if len(items) != 0:
+            rating = numba_calculate(similarity[items, :].toarray(), idf, items)
 
         return rating
 
-    def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song):
+    def initialize(self, n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song, checkpoint_dir='./checkpoints'):
         """ initialize necessary variables for Method.
 
-        initialize necessary data structure.
+        initialize necessary data structure. calculate similarity
 
         Args: 
             n_train (int)   : number of playlist in train dataset.
@@ -76,21 +83,11 @@ class ItemCFMethod(Method):
             ps_test (csr_matrix)    : playlist to song sparse matrix made from test dataset.
             transformer_tag (TfidfTransformer)  : scikit-learn TfidfTransformer model fitting pt_train.
             transformer_song (TfidfTransformer) : scikit-learn TfidfTransformer model fitting ps_train.
+            checkpoint_dir (str)    : where to save similarity matrix.
         Return:
         """    
 
         super().initialize(n_train, n_test, pt_train, ps_train, pt_test, ps_test, transformer_tag, transformer_song)
-
-    def train(self, checkpoint_dir='./checkpoints'):
-        """ Train Item CF Method
-
-        Calculate the tag-tag similarity and song-song similarity.
-        Save the similarity matrix
-
-        Args: 
-            checkpoint_dir (str)    : where to save similarity matrix.
-        Return:
-        """
 
         dirname = os.path.join(checkpoint_dir, self.name)
         if not os.path.exists(dirname):

@@ -132,8 +132,9 @@ dmypy.json
 .DS_Store
 
 # Data Directory
-res/
-arena_data/
+answers/
+orig/
+questions/
 
 # VS Code Directory
 .vscode/
@@ -145,5 +146,8 @@ static/
 checkpoints/
 submissions/
 
-# khaiii directory
-khaiii-master/
+# Not Essential Files and Directories
+trash/
+
+# JSON Files
+*.json

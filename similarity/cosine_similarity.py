@@ -1,21 +1,28 @@
 # -*- coding: utf-8 -*-
-"""
-Author: DH Song
-Last Modified: 2020.06.25
+""" Similarity Method. 
+
+Author: Hunchbrown - DH Song
+Last Modified: 2020.07.17
+
+Calculate Similarity.
 """
 
 from sklearn.metrics.pairwise import cosine_similarity
 
 def calculate_cosine_similarity(*args):
-    '''
-        calculate cosine similarity of sparse matrix
+    """ Cosine Similarity
+
+    calculate cosine similarity of sparse matrix
 
     Args:
         *args: sparse matrix
     Return:
-        : calculated cosine similarity. not in dense output for memory 
-    '''
+        similarity : calculated cosine similarity. not in dense output for memory 
+    """
+
     if len(args) == 1:
-        return cosine_similarity(args[0], dense_output=False)
+        similarity = cosine_similarity(args[0], dense_output=False)
     else:
-        return cosine_similarity(args[0], args[1], dense_output=False)
+        similarity = cosine_similarity(args[0], args[1], dense_output=False)
+    
+    return similarity
